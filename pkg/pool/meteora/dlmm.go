@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/yimingWOW/solroute/pkg"
 	"github.com/yimingWOW/solroute/pkg/sol"
 )
 
@@ -89,6 +90,18 @@ type MeteoraDlmmPool struct {
 	orgActiveId        int32
 	UserBaseAccount    solana.PublicKey
 	UserQuoteAccount   solana.PublicKey
+}
+
+func (pool *MeteoraDlmmPool) ProtocolName() pkg.ProtocolName {
+	return pkg.ProtocolNameMeteoraDlmm
+}
+
+func (pool *MeteoraDlmmPool) ProtocolType() pkg.ProtocolType {
+	return pkg.ProtocolTypeMeteoraDlmm
+}
+
+func (pool *MeteoraDlmmPool) GetProgramID() solana.PublicKey {
+	return MeteoraProgramID
 }
 
 // GetID returns the pool ID as a string

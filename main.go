@@ -13,8 +13,10 @@ import (
 )
 
 const (
+	privateKeyStr = ""
 	// RPC endpoints
-	mainnetRPC = ""
+	mainnetRPC   = ""
+	mainnetWSRPC = ""
 
 	// Token addresses
 	usdcTokenAddr = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -26,14 +28,34 @@ const (
 
 func main() {
 	// TODO: Initialize private key from environment or config file
-	var privateKey solana.PrivateKey
+	privateKey := solana.MustPrivateKeyFromBase58(privateKeyStr)
+	log.Printf("PublicKey: %v", privateKey.PublicKey())
 
 	ctx := context.Background()
-	solClient, err := sol.NewClient(ctx, mainnetRPC)
+	solClient, err := sol.NewClient(ctx, mainnetRPC, mainnetWSRPC)
 	if err != nil {
 		log.Fatalf("Failed to create solana client: %v", err)
 	}
 	defer solClient.Close()
+
+	// check balance first
+	balance, err := solClient.GetUserTokenBalance(ctx, privateKey.PublicKey(), sol.WSOL)
+	if err != nil {
+		log.Fatalf("Failed to get user token balance: %v", err)
+	}
+	log.Printf("User token balance: %v", balance)
+	if balance < 10000000 {
+		err = solClient.CoverWsol(ctx, privateKey, 10000000)
+		if err != nil {
+			log.Fatalf("Failed to cover wsol: %v", err)
+		}
+	}
+
+	tokenAccount, err := solClient.SelectOrCreateSPLTokenAccount(ctx, privateKey, solana.MustPublicKeyFromBase58(usdcTokenAddr))
+	if err != nil {
+		log.Fatalf("Failed to get user token balance: %v", err)
+	}
+	log.Printf("USDC token account: %v", tokenAccount.String())
 
 	router := router.NewSimpleRouter(
 		protocol.NewPumpAmm(solClient),

@@ -17,6 +17,7 @@ import (
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
+	"github.com/yimingWOW/solroute/pkg"
 	"lukechampine.com/uint128"
 )
 
@@ -99,6 +100,18 @@ type AMMPool struct {
 	QuoteReserve     cosmath.Int
 	UserBaseAccount  solana.PublicKey
 	UserQuoteAccount solana.PublicKey
+}
+
+func (pool *AMMPool) ProtocolName() pkg.ProtocolName {
+	return pkg.ProtocolNameRaydiumAmm
+}
+
+func (pool *AMMPool) ProtocolType() pkg.ProtocolType {
+	return pkg.ProtocolTypeRaydiumAmm
+}
+
+func (pool *AMMPool) GetProgramID() solana.PublicKey {
+	return RAYDIUM_AMM_PROGRAM_ID
 }
 
 func (l *AMMPool) Span() uint64 {

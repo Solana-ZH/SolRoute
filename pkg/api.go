@@ -8,7 +8,32 @@ import (
 	"github.com/gagliardetto/solana-go/rpc"
 )
 
+// ProtocolName represents the string name of AMM protocol
+type ProtocolName string
+
+const (
+	ProtocolNameRaydiumAmm  ProtocolName = "raydium_amm"
+	ProtocolNameRaydiumClmm ProtocolName = "raydium_clmm"
+	ProtocolNameRaydiumCpmm ProtocolName = "raydium_cpmm"
+	ProtocolNameMeteoraDlmm ProtocolName = "meteora_dlmm"
+	ProtocolNamePumpAmm     ProtocolName = "pump_amm"
+)
+
+// ProtocolType represents the numeric type of AMM protocol (matches contract enum)
+type ProtocolType uint8
+
+const (
+	ProtocolTypeRaydiumAmm ProtocolType = iota
+	ProtocolTypeRaydiumClmm
+	ProtocolTypeRaydiumCpmm
+	ProtocolTypeMeteoraDlmm
+	ProtocolTypePumpAmm
+)
+
 type Pool interface {
+	ProtocolName() ProtocolName
+	ProtocolType() ProtocolType
+	GetProgramID() solana.PublicKey
 	GetID() string
 	GetTokens() (baseMint, quoteMint string)
 	Quote(ctx context.Context, solClient *rpc.Client, inputMint string, inputAmount math.Int) (math.Int, error)

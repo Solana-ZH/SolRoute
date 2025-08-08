@@ -10,6 +10,7 @@ import (
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
+	"github.com/yimingWOW/solroute/pkg"
 )
 
 // CPMMPool represents the on-chain pool state
@@ -49,6 +50,18 @@ type CPMMPool struct {
 	QuoteDecimal     uint64
 	BaseNeedTakePnl  uint64
 	QuoteNeedTakePnl uint64
+}
+
+func (pool *CPMMPool) ProtocolName() pkg.ProtocolName {
+	return pkg.ProtocolNameRaydiumCpmm
+}
+
+func (pool *CPMMPool) ProtocolType() pkg.ProtocolType {
+	return pkg.ProtocolTypeRaydiumCpmm
+}
+
+func (pool *CPMMPool) GetProgramID() solana.PublicKey {
+	return RAYDIUM_CPMM_PROGRAM_ID
 }
 
 func (p *CPMMPool) Decode(data []byte) error {

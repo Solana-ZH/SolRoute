@@ -42,16 +42,16 @@ func (r *SimpleRouter) GetBestPool(
 	for _, p := range r.protocols {
 		pools, err := p.FetchPoolsByPair(ctx, tokenIn, tokenOut)
 		if err != nil {
+			log.Printf("error fetching pools: %v", err)
 			continue
 		}
 
 		for _, pool := range pools {
 			outAmount, err := pool.Quote(ctx, solClient, tokenIn, amountIn)
 			if err != nil {
+				log.Printf("error quoting: %v", err)
 				continue
 			}
-			log.Printf("pool: %v, outAmount: %v", pool.GetID(), outAmount)
-
 			if outAmount.GT(maxOut) {
 				maxOut = outAmount
 				best = pool

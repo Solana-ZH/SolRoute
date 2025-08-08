@@ -17,6 +17,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/gagliardetto/treeout v0.1.4 // indirect
+	github.com/go-resty/resty/v2 v2.16.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/rpc v1.2.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
@@ -36,8 +37,9 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/ratelimit v0.2.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
-	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
-	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
+	golang.org/x/crypto v0.40.0 // indirect
+	golang.org/x/net v0.42.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/term v0.33.0 // indirect
+	golang.org/x/time v0.6.0 // indirect
 )

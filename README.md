@@ -19,6 +19,9 @@ SolRoute is a Go SDK that serves as the fundamental infrastructure for building 
 
 ## Quick Start
 
+note: before swapping, you must ensure that you have create the relavent SPL token account. I have provided some necessary func like: CoverWsol, CloseWsol and SelectOrCreateSPLTokenAccount.
+Youd'd better learn that knowledge from: https://solana.com/zh/developers/cookbook/tokens/get-token-account
+
 ```go
 // Initialize router with supported protocols
 router := router.NewSimpleRouter(

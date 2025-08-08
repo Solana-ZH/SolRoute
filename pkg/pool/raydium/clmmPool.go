@@ -15,6 +15,7 @@ import (
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
+	"github.com/yimingWOW/solroute/pkg"
 	"lukechampine.com/uint128"
 )
 
@@ -87,6 +88,18 @@ type RewardInfo struct {
 	TokenVault            solana.PublicKey
 	Authority             solana.PublicKey
 	RewardGrowthGlobalX64 uint128.Uint128
+}
+
+func (pool *CLMMPool) ProtocolName() pkg.ProtocolName {
+	return pkg.ProtocolNameRaydiumClmm
+}
+
+func (pool *CLMMPool) ProtocolType() pkg.ProtocolType {
+	return pkg.ProtocolTypeRaydiumClmm
+}
+
+func (pool *CLMMPool) GetProgramID() solana.PublicKey {
+	return RAYDIUM_CLMM_PROGRAM_ID
 }
 
 func (l *CLMMPool) Decode(data []byte) error {

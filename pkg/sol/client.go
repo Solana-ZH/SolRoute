@@ -3,7 +3,6 @@ package sol
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/gagliardetto/solana-go/rpc/ws"
@@ -16,19 +15,19 @@ type Client struct {
 }
 
 // NewClient creates a new Solana client with both RPC and WebSocket connections
-func NewClient(ctx context.Context, endpoint string) (*Client, error) {
-
-	// Initialize WebSocket client
-	wsEndpoint := strings.Replace(endpoint, "https://", "wss://", 1)
-	wsClient, err := ws.Connect(ctx, wsEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to establish WebSocket connection: %w", err)
-	}
-
-	return &Client{
+func NewClient(ctx context.Context, endpoint, wsEndpoint string) (*Client, error) {
+	c := &Client{
 		RpcClient: rpc.New(endpoint),
-		WsClient:  wsClient,
-	}, nil
+	}
+	if wsEndpoint != "" {
+		// Initialize WebSocket client
+		wsClient, err := ws.Connect(ctx, wsEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to establish WebSocket connection: %w", err)
+		}
+		c.WsClient = wsClient
+	}
+	return c, nil
 }
 
 // Close terminates all client connections

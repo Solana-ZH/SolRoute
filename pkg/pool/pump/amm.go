@@ -10,6 +10,7 @@ import (
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
+	"github.com/yimingWOW/solroute/pkg"
 	"github.com/yimingWOW/solroute/utils"
 )
 
@@ -49,6 +50,18 @@ type PumpAMMPool struct {
 	QuoteAmount      math.Int
 	UserBaseAccount  solana.PublicKey
 	UserQuoteAccount solana.PublicKey
+}
+
+func (pool *PumpAMMPool) ProtocolName() pkg.ProtocolName {
+	return pkg.ProtocolNamePumpAmm
+}
+
+func (pool *PumpAMMPool) ProtocolType() pkg.ProtocolType {
+	return pkg.ProtocolTypePumpAmm
+}
+
+func (pool *PumpAMMPool) GetProgramID() solana.PublicKey {
+	return PumpSwapProgramID
 }
 
 // Span returns the default span value for the pool
