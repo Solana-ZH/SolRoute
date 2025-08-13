@@ -67,6 +67,10 @@ Contributed by [yimingWOW](https://github.com/yimingWOW) from [Solar](https://ww
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+### Work in progress
+
+[SeanTong11](https://github.com/SeanTong11/SolRoute) will add Orca's whirpool for SolRoute
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
