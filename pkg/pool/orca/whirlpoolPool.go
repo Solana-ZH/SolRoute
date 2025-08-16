@@ -1,11 +1,13 @@
 package orca
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
 
 	cosmath "cosmossdk.io/math"
+	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/yimingWOW/solroute/pkg"
@@ -302,7 +304,7 @@ func (pool *WhirlpoolPool) ComputeWhirlpoolAmountOutFormat(inputTokenMint string
 	return expectedAmountOut, nil
 }
 
-// BuildSwapInstructions 方法 - 构建交换指令 (基础实现，返回空指令用于测试)
+// BuildSwapInstructions 方法 - 构建真实的 Whirlpool SwapV2 指令
 func (pool *WhirlpoolPool) BuildSwapInstructions(
 	ctx context.Context,
 	solClient *rpc.Client,
@@ -311,33 +313,94 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 	amountIn cosmath.Int,
 	minOutAmountWithDecimals cosmath.Int,
 ) ([]solana.Instruction, error) {
-	// TODO: 实现真正的交换指令构建逻辑，参考 CLMM 的实现
-	// 现在返回空指令列表用于测试框架
+	// 1. 确定交换方向
+	var aToB bool
+	var inputTokenMint, outputTokenMint solana.PublicKey
+	var inputTokenVault, outputTokenVault solana.PublicKey
 
-	// 检查输入代币是哪个
-	var isAtoB bool
 	if inputMint == pool.TokenMintA.String() {
-		isAtoB = true
+		// A -> B 交换
+		aToB = true
+		inputTokenMint = pool.TokenMintA
+		outputTokenMint = pool.TokenMintB
+		inputTokenVault = pool.TokenVaultA
+		outputTokenVault = pool.TokenVaultB
 	} else if inputMint == pool.TokenMintB.String() {
-		isAtoB = false
+		// B -> A 交换
+		aToB = false
+		inputTokenMint = pool.TokenMintB
+		outputTokenMint = pool.TokenMintA
+		inputTokenVault = pool.TokenVaultB
+		outputTokenVault = pool.TokenVaultA
 	} else {
 		return nil, fmt.Errorf("input mint %s not found in pool", inputMint)
 	}
 
-	// 设置用户账户（暂时设为同一个地址，实际需要查找真实的代币账户）
-	if isAtoB {
-		pool.UserBaseAccount = userAddr  // 简化处理
-		pool.UserQuoteAccount = userAddr // 简化处理
-	} else {
-		pool.UserBaseAccount = userAddr  // 简化处理
-		pool.UserQuoteAccount = userAddr // 简化处理
+	// 2. 获取或创建用户的代币账户
+	userInputAccount, err := getOrCreateTokenAccount(ctx, solClient, userAddr, inputTokenMint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get input token account: %w", err)
 	}
 
-	// 返回空指令列表（用于测试，不会实际执行交易）
-	fmt.Printf("Whirlpool BuildSwapInstructions called: pool=%s, inputMint=%s, amountIn=%s, aToB=%v\n",
-		pool.GetID(), inputMint, amountIn.String(), isAtoB)
+	userOutputAccount, err := getOrCreateTokenAccount(ctx, solClient, userAddr, outputTokenMint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get output token account: %w", err)
+	}
 
-	return []solana.Instruction{}, nil
+	// 3. 计算价格限制 (设置为极值，实际不限制)
+	var sqrtPriceLimit uint128.Uint128
+	if aToB {
+		sqrtPriceLimit = uint128.FromBig(MIN_SQRT_PRICE_X64.BigInt())
+	} else {
+		sqrtPriceLimit = uint128.FromBig(MAX_SQRT_PRICE_X64.BigInt())
+	}
+
+	// 4. 构建 tick array 地址 (使用真实的 PDA 推导)
+	tickArray0, tickArray1, tickArray2, err := DeriveMultipleWhirlpoolTickArrayPDAs(
+		pool.PoolId,
+		int64(pool.TickCurrentIndex),
+		int64(pool.TickSpacing),
+		aToB,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive tick array PDAs: %w", err)
+	}
+
+	// 5. Oracle 地址 (Whirlpool 中通常是池本身)
+	oracleAddr := pool.PoolId
+
+	// 6. 构建 SwapV2 指令参数
+	instruction, err := createWhirlpoolSwapV2Instruction(
+		// 指令参数
+		amountIn.Uint64(),                 // amount
+		minOutAmountWithDecimals.Uint64(), // otherAmountThreshold
+		sqrtPriceLimit,                    // sqrtPriceLimit
+		true,                              // amountSpecifiedIsInput
+		aToB,                              // aToB
+		nil,                               // remainingAccountsInfo
+
+		// 账户地址
+		TOKEN_PROGRAM_ID,  // tokenProgramA
+		TOKEN_PROGRAM_ID,  // tokenProgramB
+		MEMO_PROGRAM_ID,   // memoProgram
+		userAddr,          // tokenAuthority
+		pool.PoolId,       // whirlpool
+		pool.TokenMintA,   // tokenMintA
+		pool.TokenMintB,   // tokenMintB
+		userInputAccount,  // tokenOwnerAccountA (根据方向)
+		inputTokenVault,   // tokenVaultA
+		userOutputAccount, // tokenOwnerAccountB (根据方向)
+		outputTokenVault,  // tokenVaultB
+		tickArray0,        // tickArray0
+		tickArray1,        // tickArray1
+		tickArray2,        // tickArray2
+		oracleAddr,        // oracle
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SwapV2 instruction: %w", err)
+	}
+
+	return []solana.Instruction{instruction}, nil
 }
 
 // whirlpoolSwapCompute - Whirlpool 核心交换计算逻辑 (简化版本，参考 CLMM 实现)
@@ -475,4 +538,129 @@ func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 	}
 
 	return sqrtPriceNext, amountIn, amountOut, feeAmount, nil
+}
+
+// getOrCreateTokenAccount 获取或创建用户的代币账户
+func getOrCreateTokenAccount(ctx context.Context, solClient *rpc.Client, userAddr solana.PublicKey, tokenMint solana.PublicKey) (solana.PublicKey, error) {
+	// 实现真实的 ATA (Associated Token Account) 查找逻辑
+	ata, _, err := solana.FindAssociatedTokenAddress(userAddr, tokenMint)
+	if err != nil {
+		return solana.PublicKey{}, fmt.Errorf("failed to find associated token address: %w", err)
+	}
+
+	// 注意：这里只返回 ATA 地址，不检查账户是否存在
+	// 在实际交易中，如果 ATA 不存在，交易会失败
+	// 生产环境中可能需要添加创建 ATA 的指令
+	// 但对于大多数主流代币，用户通常已经有 ATA 账户
+
+	return ata, nil
+}
+
+// createWhirlpoolSwapV2Instruction 创建 Whirlpool SwapV2 指令
+func createWhirlpoolSwapV2Instruction(
+	// 参数
+	amount uint64,
+	otherAmountThreshold uint64,
+	sqrtPriceLimit uint128.Uint128,
+	amountSpecifiedIsInput bool,
+	aToB bool,
+	remainingAccountsInfo interface{}, // 暂时用 interface{}
+
+	// 账户
+	tokenProgramA solana.PublicKey,
+	tokenProgramB solana.PublicKey,
+	memoProgram solana.PublicKey,
+	tokenAuthority solana.PublicKey,
+	whirlpool solana.PublicKey,
+	tokenMintA solana.PublicKey,
+	tokenMintB solana.PublicKey,
+	tokenOwnerAccountA solana.PublicKey,
+	tokenVaultA solana.PublicKey,
+	tokenOwnerAccountB solana.PublicKey,
+	tokenVaultB solana.PublicKey,
+	tickArray0 solana.PublicKey,
+	tickArray1 solana.PublicKey,
+	tickArray2 solana.PublicKey,
+	oracle solana.PublicKey,
+) (solana.Instruction, error) {
+
+	// 1. 构建指令数据
+	buf := new(bytes.Buffer)
+	enc := bin.NewBorshEncoder(buf)
+
+	// 写入 SwapV2 指令判别器
+	err := enc.WriteBytes(SwapV2Discriminator, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write discriminator: %w", err)
+	}
+
+	// 写入参数
+	err = enc.Encode(amount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode amount: %w", err)
+	}
+
+	err = enc.Encode(otherAmountThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode otherAmountThreshold: %w", err)
+	}
+
+	// 写入 sqrt price limit (16 bytes little endian)
+	sqrtPriceLimitLo := sqrtPriceLimit.Lo
+	sqrtPriceLimitHi := sqrtPriceLimit.Hi
+
+	// 写入低64位
+	err = enc.Encode(sqrtPriceLimitLo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode sqrtPriceLimit lo: %w", err)
+	}
+
+	// 写入高64位
+	err = enc.Encode(sqrtPriceLimitHi)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode sqrtPriceLimit hi: %w", err)
+	}
+
+	err = enc.Encode(amountSpecifiedIsInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode amountSpecifiedIsInput: %w", err)
+	}
+
+	err = enc.Encode(aToB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode aToB: %w", err)
+	}
+
+	// 写入 remainingAccountsInfo (Option<None>)
+	err = enc.WriteOption(false) // None
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode remainingAccountsInfo: %w", err)
+	}
+
+	// 2. 构建账户元数据
+	accounts := solana.AccountMetaSlice{}
+
+	// 按照 Whirlpool SwapV2 指令的账户顺序添加
+	accounts.Append(solana.NewAccountMeta(tokenProgramA, false, false))     // 0: token_program_a
+	accounts.Append(solana.NewAccountMeta(tokenProgramB, false, false))     // 1: token_program_b
+	accounts.Append(solana.NewAccountMeta(memoProgram, false, false))       // 2: memo_program
+	accounts.Append(solana.NewAccountMeta(tokenAuthority, false, true))     // 3: token_authority (signer)
+	accounts.Append(solana.NewAccountMeta(whirlpool, true, false))          // 4: whirlpool (writable)
+	accounts.Append(solana.NewAccountMeta(tokenMintA, false, false))        // 5: token_mint_a
+	accounts.Append(solana.NewAccountMeta(tokenMintB, false, false))        // 6: token_mint_b
+	accounts.Append(solana.NewAccountMeta(tokenOwnerAccountA, true, false)) // 7: token_owner_account_a (writable)
+	accounts.Append(solana.NewAccountMeta(tokenVaultA, true, false))        // 8: token_vault_a (writable)
+	accounts.Append(solana.NewAccountMeta(tokenOwnerAccountB, true, false)) // 9: token_owner_account_b (writable)
+	accounts.Append(solana.NewAccountMeta(tokenVaultB, true, false))        // 10: token_vault_b (writable)
+	accounts.Append(solana.NewAccountMeta(tickArray0, true, false))         // 11: tick_array_0 (writable)
+	accounts.Append(solana.NewAccountMeta(tickArray1, true, false))         // 12: tick_array_1 (writable)
+	accounts.Append(solana.NewAccountMeta(tickArray2, true, false))         // 13: tick_array_2 (writable)
+	accounts.Append(solana.NewAccountMeta(oracle, true, false))             // 14: oracle (writable)
+
+	// 3. 创建指令
+	return solana.NewInstruction(
+		ORCA_WHIRLPOOL_PROGRAM_ID,
+		accounts,
+		buf.Bytes(),
+	), nil
 }
