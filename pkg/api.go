@@ -12,11 +12,12 @@ import (
 type ProtocolName string
 
 const (
-	ProtocolNameRaydiumAmm  ProtocolName = "raydium_amm"
-	ProtocolNameRaydiumClmm ProtocolName = "raydium_clmm"
-	ProtocolNameRaydiumCpmm ProtocolName = "raydium_cpmm"
-	ProtocolNameMeteoraDlmm ProtocolName = "meteora_dlmm"
-	ProtocolNamePumpAmm     ProtocolName = "pump_amm"
+	ProtocolNameRaydiumAmm    ProtocolName = "raydium_amm"
+	ProtocolNameRaydiumClmm   ProtocolName = "raydium_clmm"
+	ProtocolNameRaydiumCpmm   ProtocolName = "raydium_cpmm"
+	ProtocolNameMeteoraDlmm   ProtocolName = "meteora_dlmm"
+	ProtocolNamePumpAmm       ProtocolName = "pump_amm"
+	ProtocolNameOrcaWhirlpool ProtocolName = "orca_whirlpool"
 )
 
 // ProtocolType represents the numeric type of AMM protocol (matches contract enum)
@@ -28,6 +29,7 @@ const (
 	ProtocolTypeRaydiumCpmm
 	ProtocolTypeMeteoraDlmm
 	ProtocolTypePumpAmm
+	ProtocolTypeOrcaWhirlpool
 )
 
 type Pool interface {
