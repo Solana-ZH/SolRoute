@@ -70,9 +70,19 @@ func (p *OrcaWhirlpoolProtocol) getWhirlpoolAccountsByTokenPair(ctx context.Cont
 		return nil, fmt.Errorf("invalid quote mint address: %w", err)
 	}
 
+	// Whirlpool account discriminator (从 external/orca/whirlpool/generated/discriminators.go)
+	whirlpoolDiscriminator := [8]byte{63, 149, 209, 12, 225, 128, 99, 9}
+
 	var knownPoolLayout orca.WhirlpoolPool
 	result, err := p.SolClient.RpcClient.GetProgramAccountsWithOpts(ctx, orca.ORCA_WHIRLPOOL_PROGRAM_ID, &rpc.GetProgramAccountsOpts{
 		Filters: []rpc.RPCFilter{
+			{
+				// 首先过滤 Whirlpool discriminator（确保只查询 Whirlpool 账户）
+				Memcmp: &rpc.RPCFilterMemcmp{
+					Offset: 0, // Discriminator 在账户数据开头
+					Bytes:  whirlpoolDiscriminator[:],
+				},
+			},
 			{
 				DataSize: uint64(knownPoolLayout.Span()),
 			},
