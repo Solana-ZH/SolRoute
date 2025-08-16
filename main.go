@@ -87,9 +87,9 @@ func main() {
 	// Calculate minimum output amount with slippage
 	minAmountOut := amountOut.Mul(math.NewInt(10000 - slippageBps)).Quo(math.NewInt(10000))
 
-	// Build swap instructions
+	// Build swap instructions (注意: 我们是用 WSOL 换 USDC)
 	instructions, err := bestPool.BuildSwapInstructions(ctx, solClient.RpcClient,
-		privateKey.PublicKey(), usdcTokenAddr, amountIn, minAmountOut)
+		privateKey.PublicKey(), sol.WSOL.String(), amountIn, minAmountOut)
 	if err != nil {
 		log.Fatalf("Failed to build swap instructions: %v", err)
 	}

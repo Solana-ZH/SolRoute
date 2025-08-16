@@ -293,6 +293,14 @@ func (l *CLMMPool) CurrentPrice() float64 {
 	return price
 }
 
+// IsSwapEnabled checks if swap functionality is enabled for this pool
+func (l *CLMMPool) IsSwapEnabled() bool {
+	// Bit 4 corresponds to Swap functionality
+	// If bit is 0, swap is enabled; if bit is 1, swap is disabled
+	swapBit := (l.Status >> 4) & 1
+	return swapBit == 0
+}
+
 func (p *CLMMPool) BuildSwapInstructions(
 	ctx context.Context,
 	solClient *rpc.Client,
@@ -304,6 +312,57 @@ func (p *CLMMPool) BuildSwapInstructions(
 
 	// 初始化指令数组和签名者
 	instrs := []solana.Instruction{}
+
+	// 设置用户代币账户 - 这是关键修复！
+	var err error
+	userInputMintKey, err := solana.PublicKeyFromBase58(inputMint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid input mint: %w", err)
+	}
+
+	var outputMint solana.PublicKey
+	if inputMint == p.TokenMint0.String() {
+		outputMint = p.TokenMint1
+		// 找到用户的 ATA 账户
+		p.UserBaseAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, userInputMintKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user input token account: %w", err)
+		}
+		p.UserQuoteAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, outputMint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user output token account: %w", err)
+		}
+	} else {
+		outputMint = p.TokenMint0
+		// 找到用户的 ATA 账户
+		p.UserQuoteAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, userInputMintKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user input token account: %w", err)
+		}
+		p.UserBaseAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, outputMint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user output token account: %w", err)
+		}
+	}
+
+	// 检查并创建输出 ATA 账户（如果不存在）
+	var outputATAAccount solana.PublicKey
+	if inputMint == p.TokenMint0.String() {
+		outputATAAccount = p.UserQuoteAccount
+	} else {
+		outputATAAccount = p.UserBaseAccount
+	}
+
+	outputATAInfo, err := solClient.GetAccountInfo(ctx, outputATAAccount)
+	if err != nil || outputATAInfo.Value == nil || outputATAInfo.Value.Owner.IsZero() {
+		// ATA 不存在，需要创建它
+		// 这里暂时跳过创建 ATA 的指令，让用户手动创建
+		// 或者可以使用 solana CLI: solana spl-token create-account <mint>
+		log.Printf("Warning: Output ATA account %s does not exist, please create it manually", outputATAAccount.String())
+	}
+
+	// 移除 Approve 指令，CLMM 可能使用不同的授权机制
+	// 或者根本不需要预授权
 
 	var inputValueMint solana.PublicKey
 	var outputValueMint solana.PublicKey
