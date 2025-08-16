@@ -11,12 +11,29 @@ import (
 	"github.com/yimingWOW/solroute/pkg/sol"
 )
 
-// OrcaWhirlpoolProtocol 实现 Protocol 接口
+// OrcaWhirlpoolProtocol 实现 Protocol 接口，提供 Orca Whirlpool V2 协议支持
+//
+// Orca Whirlpool 是一个基于集中流动性的自动化做市商 (CLMM) 协议，
+// 支持资本效率优化的流动性提供和交易。
+//
+// 程序 ID: whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc
+//
+// 主要特性:
+// - 集中流动性管理
+// - 多级费用结构
+// - Tick-based 价格机制
+// - SwapV2 指令支持
 type OrcaWhirlpoolProtocol struct {
 	SolClient *sol.Client
 }
 
 // NewOrcaWhirlpool 创建新的 Orca Whirlpool 协议实例
+//
+// 参数:
+//   - solClient: Solana 客户端，用于与区块链交互
+//
+// 返回:
+//   - *OrcaWhirlpoolProtocol: 协议实例
 func NewOrcaWhirlpool(solClient *sol.Client) *OrcaWhirlpoolProtocol {
 	return &OrcaWhirlpoolProtocol{
 		SolClient: solClient,

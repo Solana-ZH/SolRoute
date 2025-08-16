@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strings"
+	"time"
 
 	cosmath "cosmossdk.io/math"
 	bin "github.com/gagliardetto/binary"
@@ -15,6 +17,15 @@ import (
 )
 
 // WhirlpoolPool 结构体 - 映射自 Orca Whirlpool 账户结构
+//
+// 这个结构体精确映射了 Orca Whirlpool V2 协议的池账户数据格式。
+// 数据结构基于 external/orca/whirlpool/generated/types.go 的 Whirlpool 结构，
+// 并针对字段命名差异进行了适配：
+//   - CLMM: TokenMint0/1 → Whirlpool: TokenMintA/B
+//   - CLMM: SqrtPriceX64 → Whirlpool: SqrtPrice
+//   - CLMM: TickCurrent → Whirlpool: TickCurrentIndex
+//
+// 总账户大小: 653 字节 (包含 8 字节 discriminator)
 type WhirlpoolPool struct {
 	// 8 bytes discriminator
 	Discriminator [8]uint8 `bin:"skip"`
@@ -255,29 +266,128 @@ func (pool *WhirlpoolPool) Offset(field string) uint64 {
 	return 0
 }
 
-// Quote 方法 - 获取交换报价 (基础实现，返回虚拟报价用于测试)
+// Quote 方法 - 获取交换报价 (带边界验证和错误处理)
 func (pool *WhirlpoolPool) Quote(ctx context.Context, solClient *rpc.Client, inputMint string, inputAmount cosmath.Int) (cosmath.Int, error) {
-	// Whirlpool 真实报价计算 - 参考 CLMM 实现并适配 Whirlpool
-	// 暂时简化实现，不查询外部 bitmap 和 tick arrays
-
-	// 1. 检查输入代币类型
-	if inputMint == pool.TokenMintA.String() {
-		// A -> B 交换
-		priceAtoB, err := pool.ComputeWhirlpoolAmountOutFormat(pool.TokenMintA.String(), inputAmount)
-		if err != nil {
-			return cosmath.Int{}, err
-		}
-		return priceAtoB.Neg(), nil // 返回负数表示输出金额
-	} else if inputMint == pool.TokenMintB.String() {
-		// B -> A 交换
-		priceBtoA, err := pool.ComputeWhirlpoolAmountOutFormat(pool.TokenMintB.String(), inputAmount)
-		if err != nil {
-			return cosmath.Int{}, err
-		}
-		return priceBtoA.Neg(), nil // 返回负数表示输出金额
-	} else {
-		return cosmath.Int{}, fmt.Errorf("input mint %s not found in pool", inputMint)
+	// 1. 输入验证
+	if err := pool.validateQuoteInputs(inputMint, inputAmount); err != nil {
+		return cosmath.Int{}, fmt.Errorf("quote input validation failed: %w", err)
 	}
+
+	// 2. 池状态验证
+	if err := pool.validatePoolState(); err != nil {
+		return cosmath.Int{}, fmt.Errorf("pool state validation failed: %w", err)
+	}
+
+	// 3. 计算报价 (带重试机制)
+	maxRetries := 2
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		var priceResult cosmath.Int
+		var err error
+
+		if inputMint == pool.TokenMintA.String() {
+			// A -> B 交换
+			priceResult, err = pool.ComputeWhirlpoolAmountOutFormat(pool.TokenMintA.String(), inputAmount)
+		} else if inputMint == pool.TokenMintB.String() {
+			// B -> A 交换
+			priceResult, err = pool.ComputeWhirlpoolAmountOutFormat(pool.TokenMintB.String(), inputAmount)
+		} else {
+			return cosmath.Int{}, fmt.Errorf("input mint %s not found in pool %s", inputMint, pool.PoolId.String())
+		}
+
+		if err != nil {
+			lastErr = err
+			// 如果是计算错误且还有重试次数，短暂等待后重试
+			if attempt < maxRetries && isTemporaryError(err) {
+				time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+				continue
+			}
+			return cosmath.Int{}, fmt.Errorf("amount calculation failed after %d attempts: %w", attempt+1, err)
+		}
+
+		// 4. 输出验证
+		if err := pool.validateQuoteOutput(priceResult); err != nil {
+			return cosmath.Int{}, fmt.Errorf("quote output validation failed: %w", err)
+		}
+
+		return priceResult.Neg(), nil // 返回负数表示输出金额
+	}
+
+	return cosmath.Int{}, fmt.Errorf("quote calculation failed after retries: %w", lastErr)
+}
+
+// validateQuoteInputs 验证报价输入参数
+func (pool *WhirlpoolPool) validateQuoteInputs(inputMint string, inputAmount cosmath.Int) error {
+	// 检查输入金额
+	if inputAmount.IsZero() {
+		return fmt.Errorf("input amount cannot be zero")
+	}
+	if inputAmount.IsNegative() {
+		return fmt.Errorf("input amount cannot be negative")
+	}
+
+	// 检查输入金额是否过大 (防止溢出)
+	maxAmount := cosmath.NewIntFromUint64(1e18) // 设置合理的最大值
+	if inputAmount.GT(maxAmount) {
+		return fmt.Errorf("input amount too large: %s > %s", inputAmount.String(), maxAmount.String())
+	}
+
+	// 检查代币 mint 格式
+	if len(inputMint) != 44 { // Solana 地址长度
+		return fmt.Errorf("invalid mint address format: %s", inputMint)
+	}
+
+	return nil
+}
+
+// validatePoolState 验证池状态
+func (pool *WhirlpoolPool) validatePoolState() error {
+	// 检查流动性
+	if pool.Liquidity.IsZero() {
+		return fmt.Errorf("pool has zero liquidity")
+	}
+
+	// 检查价格
+	if pool.SqrtPrice.IsZero() {
+		return fmt.Errorf("pool has zero sqrt price")
+	}
+
+	// 检查 tick spacing
+	if pool.TickSpacing == 0 {
+		return fmt.Errorf("pool has zero tick spacing")
+	}
+
+	// 检查代币 mint 地址
+	if pool.TokenMintA.IsZero() || pool.TokenMintB.IsZero() {
+		return fmt.Errorf("pool has invalid token mint addresses")
+	}
+
+	return nil
+}
+
+// validateQuoteOutput 验证报价输出
+func (pool *WhirlpoolPool) validateQuoteOutput(outputAmount cosmath.Int) error {
+	// 检查输出是否为零
+	if outputAmount.IsZero() {
+		return fmt.Errorf("computed output amount is zero")
+	}
+
+	// 检查输出是否为正数
+	if outputAmount.IsNegative() {
+		return fmt.Errorf("computed output amount is negative: %s", outputAmount.String())
+	}
+
+	return nil
+}
+
+// isTemporaryError 判断是否是临时错误
+func isTemporaryError(err error) bool {
+	errorMsg := strings.ToLower(err.Error())
+	return strings.Contains(errorMsg, "overflow") ||
+		strings.Contains(errorMsg, "underflow") ||
+		strings.Contains(errorMsg, "division by zero") ||
+		strings.Contains(errorMsg, "timeout")
 }
 
 // ComputeWhirlpoolAmountOutFormat - Whirlpool 版本的输出金额计算，参考 CLMM 实现
@@ -305,6 +415,15 @@ func (pool *WhirlpoolPool) ComputeWhirlpoolAmountOutFormat(inputTokenMint string
 }
 
 // BuildSwapInstructions 方法 - 构建真实的 Whirlpool SwapV2 指令
+//
+// 这个方法构建完整的 Whirlpool SwapV2 交易指令，包括：
+// 1. 交换方向判断 (A->B 或 B->A)
+// 2. ATA 账户推导和存在性检查
+// 3. Tick Array PDA 地址计算
+// 4. SwapV2 指令参数编码
+// 5. 正确的账户元数据排列
+//
+// 返回的指令可以直接用于 Solana 交易执行。
 func (pool *WhirlpoolPool) BuildSwapInstructions(
 	ctx context.Context,
 	solClient *rpc.Client,
@@ -542,18 +661,114 @@ func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 
 // getOrCreateTokenAccount 获取或创建用户的代币账户
 func getOrCreateTokenAccount(ctx context.Context, solClient *rpc.Client, userAddr solana.PublicKey, tokenMint solana.PublicKey) (solana.PublicKey, error) {
-	// 实现真实的 ATA (Associated Token Account) 查找逻辑
+	// 1. 推导 ATA 地址
 	ata, _, err := solana.FindAssociatedTokenAddress(userAddr, tokenMint)
 	if err != nil {
 		return solana.PublicKey{}, fmt.Errorf("failed to find associated token address: %w", err)
 	}
 
-	// 注意：这里只返回 ATA 地址，不检查账户是否存在
-	// 在实际交易中，如果 ATA 不存在，交易会失败
-	// 生产环境中可能需要添加创建 ATA 的指令
-	// 但对于大多数主流代币，用户通常已经有 ATA 账户
+	// 2. 检查 ATA 账户是否存在
+	accountExists, err := checkAccountExists(ctx, solClient, ata)
+	if err != nil {
+		// 如果 RPC 查询失败，继续使用 ATA 地址，让交易自然失败
+		// 这样可以避免阻塞正常流程
+		return ata, nil
+	}
+
+	if !accountExists {
+		// ATA 不存在，但我们仍然返回地址
+		// 在实际应用中，调用方需要决定是否添加创建 ATA 的指令
+		// 对于主流代币（如 SOL, USDC），用户通常已经有 ATA
+		return ata, nil
+	}
 
 	return ata, nil
+}
+
+// checkAccountExists 检查账户是否存在 (带重试机制)
+func checkAccountExists(ctx context.Context, solClient *rpc.Client, accountAddr solana.PublicKey) (bool, error) {
+	// 实现简单的重试机制，应对 RPC 限流
+	maxRetries := 3
+	baseDelay := 100 // 100ms
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// 使用 getAccountInfo 检查账户是否存在
+		_, err := solClient.GetAccountInfo(ctx, accountAddr)
+		if err != nil {
+			// 检查是否是"账户不存在"的错误
+			if isAccountNotFoundError(err) {
+				return false, nil
+			}
+
+			// 检查是否是 RPC 限流错误
+			if isRateLimitError(err) && attempt < maxRetries {
+				// 指数退避重试
+				delay := baseDelay * (1 << attempt) // 100ms, 200ms, 400ms
+				time.Sleep(time.Duration(delay) * time.Millisecond)
+				continue
+			}
+
+			// 其他错误直接返回
+			return false, fmt.Errorf("failed to check account existence after %d attempts: %w", attempt+1, err)
+		}
+
+		// 账户存在，成功返回
+		return true, nil
+	}
+
+	// 不应该到达这里
+	return false, fmt.Errorf("exhausted retries checking account existence")
+}
+
+// isAccountNotFoundError 判断是否是账户不存在的错误
+func isAccountNotFoundError(err error) bool {
+	// Solana RPC 在账户不存在时返回特定错误信息
+	errorMsg := strings.ToLower(err.Error())
+	return strings.Contains(errorMsg, "account not found") ||
+		strings.Contains(errorMsg, "could not find account") ||
+		strings.Contains(errorMsg, "invalid param")
+}
+
+// isRateLimitError 判断是否是 RPC 限流错误
+func isRateLimitError(err error) bool {
+	// 检测常见的 RPC 限流错误信息
+	errorMsg := strings.ToLower(err.Error())
+	return strings.Contains(errorMsg, "too many requests") ||
+		strings.Contains(errorMsg, "rate limit") ||
+		strings.Contains(errorMsg, "429") ||
+		strings.Contains(errorMsg, "quota exceeded") ||
+		strings.Contains(errorMsg, "timeout") ||
+		strings.Contains(errorMsg, "connection reset")
+}
+
+// createAssociatedTokenAccountInstruction 创建 ATA 账户的指令 (预留功能)
+// 注意：当前不自动添加创建指令，由调用方决定
+func createAssociatedTokenAccountInstruction(
+	payer solana.PublicKey,
+	associatedTokenAddress solana.PublicKey,
+	owner solana.PublicKey,
+	tokenMint solana.PublicKey,
+) (solana.Instruction, error) {
+	// 构建创建 ATA 的指令
+	// 参考: https://github.com/solana-labs/solana-program-library/blob/master/associated-token-account/program/src/instruction.rs
+
+	accounts := solana.AccountMetaSlice{}
+	accounts.Append(solana.NewAccountMeta(payer, false, true))                   // 0: payer (signer)
+	accounts.Append(solana.NewAccountMeta(associatedTokenAddress, true, false))  // 1: associated_token_account (writable)
+	accounts.Append(solana.NewAccountMeta(owner, false, false))                  // 2: owner
+	accounts.Append(solana.NewAccountMeta(tokenMint, false, false))              // 3: mint
+	accounts.Append(solana.NewAccountMeta(solana.SystemProgramID, false, false)) // 4: system_program
+	accounts.Append(solana.NewAccountMeta(TOKEN_PROGRAM_ID, false, false))       // 5: token_program
+
+	// ATA 程序 ID
+	ataProgramID := solana.MustPublicKeyFromBase58("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
+
+	// 创建指令 (无需数据，ATA 程序有默认创建指令)
+	return solana.NewInstruction(
+		ataProgramID,
+		accounts,
+		[]byte{}, // 空数据，ATA 程序的创建指令不需要参数
+	), nil
 }
 
 // createWhirlpoolSwapV2Instruction 创建 Whirlpool SwapV2 指令
