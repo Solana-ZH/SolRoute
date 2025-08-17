@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -599,7 +600,8 @@ func (pool *WhirlpoolPool) whirlpoolSwapCompute(
 	return amountCalculated, nil
 }
 
-// whirlpoolSwapStepCompute - Whirlpool 单步交换计算 (基于真实CLMM模型)
+// whirlpoolSwapStepCompute - Whirlpool 精确 CLMM 计算 (基于 Raydium CLMM 算法)
+// 采用与 Raydium CLMM 相同的精确数学公式，确保计算准确性
 func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 	sqrtPriceCurrent cosmath.Int,
 	sqrtPriceTarget cosmath.Int,
@@ -619,86 +621,170 @@ func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 		return sqrtPriceCurrent, cosmath.ZeroInt(), cosmath.ZeroInt(), cosmath.ZeroInt(), nil
 	}
 
-	// Step 1: 计算费用后的净输入金额
-	// 费用 = 输入金额 * 费率 / (1 + 费率)，这样才是正确的计算方式
-	oneMinusFeeRate := cosmath.NewInt(1000).Sub(feeRate.Quo(cosmath.NewInt(100))) // 1 - feeRate/100000 * 1000
-	netAmountIn := baseAmount.Mul(oneMinusFeeRate).Quo(cosmath.NewInt(1000))
-	feeAmount = baseAmount.Sub(netAmountIn)
+	// 调用精确的 CLMM swap step 计算
+	// 这个函数采用与 Raydium 相同的算法，确保数学准确性
+	return whirlpoolSwapStepComputePrecise(
+		sqrtPriceCurrent.BigInt(),
+		sqrtPriceTarget.BigInt(),
+		liquidity.BigInt(),
+		baseAmount.BigInt(),
+		uint32(feeRate.Int64()),
+		zeroForOne,
+	)
+}
 
-	// Step 2: 简化的数值稳定计算
-	// 基于比例计算，避免大数精度损失
+// whirlpoolSwapStepComputePrecise - 精确的 CLMM swap step 计算
+// 基于 Raydium CLMM 的 swapStepCompute 函数，针对 Whirlpool 进行适配
+func whirlpoolSwapStepComputePrecise(
+	sqrtPriceX64Current *big.Int,
+	sqrtPriceX64Target *big.Int,
+	liquidity *big.Int,
+	amountRemaining *big.Int,
+	feeRate uint32,
+	zeroForOne bool,
+) (cosmath.Int, cosmath.Int, cosmath.Int, cosmath.Int, error) {
 
-	// 计算输入金额相对于流动性的比例（使用更大的分母保持精度）
-	// ratio = netAmountIn * 1000000 / liquidity （放大100万倍保持精度）
-	scaleFactor := cosmath.NewInt(1000000)
-	ratio := netAmountIn.Mul(scaleFactor).Quo(liquidity.Add(cosmath.NewInt(1)))
-
-	// 限制最大比例，避免过度价格影响
-	maxRatio := cosmath.NewInt(1000) // 0.1% (1000/1000000)
-	if ratio.GT(maxRatio) {
-		ratio = maxRatio
+	// 定义 SwapStep 结构来追踪计算状态
+	swapStep := &WhirlpoolSwapStep{
+		SqrtPriceX64Next: new(big.Int),
+		AmountIn:         new(big.Int),
+		AmountOut:        new(big.Int),
+		FeeAmount:        new(big.Int),
 	}
 
-	var actualAmountOut cosmath.Int
+	zero := new(big.Int)
+	baseInput := amountRemaining.Cmp(zero) >= 0
+
+	// Step 1: 计算费用率相关常量
+	// FEE_RATE_DENOMINATOR = 1,000,000 (Whirlpool 使用百万分之一作为费率单位)
+	FEE_RATE_DENOMINATOR := cosmath.NewInt(1000000)
+
+	if baseInput {
+		// 精确输入模式：先扣除费用，再计算交换
+		feeRateBig := cosmath.NewInt(int64(feeRate))
+		tmp := FEE_RATE_DENOMINATOR.Sub(feeRateBig)
+		amountRemainingSubtractFee := whirlpoolMulDivFloor(
+			cosmath.NewIntFromBigInt(amountRemaining),
+			tmp,
+			FEE_RATE_DENOMINATOR,
+		)
+
+		// 计算在当前价格区间内可以交换的最大金额
+		if zeroForOne {
+			// Token A -> Token B
+			swapStep.AmountIn = whirlpoolGetTokenAmountAFromLiquidity(
+				sqrtPriceX64Target, sqrtPriceX64Current, liquidity, true)
+		} else {
+			// Token B -> Token A
+			swapStep.AmountIn = whirlpoolGetTokenAmountBFromLiquidity(
+				sqrtPriceX64Current, sqrtPriceX64Target, liquidity, true)
+		}
+
+		// 判断是否会到达目标价格
+		if amountRemainingSubtractFee.GTE(cosmath.NewIntFromBigInt(swapStep.AmountIn)) {
+			// 输入足够大，会到达目标价格
+			swapStep.SqrtPriceX64Next.Set(sqrtPriceX64Target)
+		} else {
+			// 输入不足，计算新的价格
+			swapStep.SqrtPriceX64Next = whirlpoolGetNextSqrtPriceX64FromInput(
+				sqrtPriceX64Current,
+				liquidity,
+				amountRemainingSubtractFee.BigInt(),
+				zeroForOne,
+			)
+		}
+	} else {
+		// 精确输出模式：直接计算所需输入
+		if zeroForOne {
+			swapStep.AmountOut = whirlpoolGetTokenAmountBFromLiquidity(
+				sqrtPriceX64Target, sqrtPriceX64Current, liquidity, false)
+		} else {
+			swapStep.AmountOut = whirlpoolGetTokenAmountAFromLiquidity(
+				sqrtPriceX64Current, sqrtPriceX64Target, liquidity, false)
+		}
+
+		negativeOne := new(big.Int).SetInt64(-1)
+		amountRemainingNeg := new(big.Int).Mul(amountRemaining, negativeOne)
+
+		if amountRemainingNeg.Cmp(swapStep.AmountOut) >= 0 {
+			swapStep.SqrtPriceX64Next.Set(sqrtPriceX64Target)
+		} else {
+			swapStep.SqrtPriceX64Next = whirlpoolGetNextSqrtPriceX64FromOutput(
+				sqrtPriceX64Current,
+				liquidity,
+				amountRemainingNeg,
+				zeroForOne,
+			)
+		}
+	}
+
+	// Step 2: 重新计算精确的输入输出金额
+	reachTargetPrice := swapStep.SqrtPriceX64Next.Cmp(sqrtPriceX64Target) == 0
 
 	if zeroForOne {
-		// SOL -> USDC (A -> B)
-		// 基于简化恒定乘积公式：输出 ≈ 输入 * 当前价格 * (1 - 价格影响)
-		// 这里我们简化为比例计算
-
-		// 基础输出 = 输入 * 比例因子
-		// 比例因子基于流动性大小：流动性越大，价格影响越小
-		baseOutput := netAmountIn.Mul(cosmath.NewInt(95)).Quo(cosmath.NewInt(100)) // 5%基础折扣
-
-		// 根据流动性调整：流动性越大，输出越接近输入
-		if liquidity.GT(cosmath.NewInt(1000000000)) { // 高流动性
-			actualAmountOut = baseOutput.Mul(cosmath.NewInt(98)).Quo(cosmath.NewInt(100))
-		} else if liquidity.GT(cosmath.NewInt(100000000)) { // 中等流动性
-			actualAmountOut = baseOutput.Mul(cosmath.NewInt(95)).Quo(cosmath.NewInt(100))
-		} else { // 低流动性
-			actualAmountOut = baseOutput.Mul(cosmath.NewInt(90)).Quo(cosmath.NewInt(100))
+		if !(reachTargetPrice && baseInput) {
+			swapStep.AmountIn = whirlpoolGetTokenAmountAFromLiquidity(
+				swapStep.SqrtPriceX64Next,
+				sqrtPriceX64Current,
+				liquidity,
+				true,
+			)
 		}
 
+		if !(reachTargetPrice && !baseInput) {
+			swapStep.AmountOut = whirlpoolGetTokenAmountBFromLiquidity(
+				swapStep.SqrtPriceX64Next,
+				sqrtPriceX64Current,
+				liquidity,
+				false,
+			)
+		}
 	} else {
-		// USDC -> SOL (B -> A)
-		// 类似计算但方向相反
-		baseOutput := netAmountIn.Mul(cosmath.NewInt(95)).Quo(cosmath.NewInt(100))
+		if !(reachTargetPrice && baseInput) {
+			swapStep.AmountIn = whirlpoolGetTokenAmountBFromLiquidity(
+				sqrtPriceX64Current,
+				swapStep.SqrtPriceX64Next,
+				liquidity,
+				true,
+			)
+		}
 
-		if liquidity.GT(cosmath.NewInt(1000000000)) {
-			actualAmountOut = baseOutput.Mul(cosmath.NewInt(98)).Quo(cosmath.NewInt(100))
-		} else if liquidity.GT(cosmath.NewInt(100000000)) {
-			actualAmountOut = baseOutput.Mul(cosmath.NewInt(95)).Quo(cosmath.NewInt(100))
-		} else {
-			actualAmountOut = baseOutput.Mul(cosmath.NewInt(90)).Quo(cosmath.NewInt(100))
+		if !(reachTargetPrice && !baseInput) {
+			swapStep.AmountOut = whirlpoolGetTokenAmountAFromLiquidity(
+				sqrtPriceX64Current,
+				swapStep.SqrtPriceX64Next,
+				liquidity,
+				false,
+			)
 		}
 	}
 
-	// Step 3: 应用极端保守的安全边际
-	// 应用80%的安全边际，确保交易成功（只保留20%的期望输出）
-	safetyMargin := cosmath.NewInt(20) // 20% = (100-80)%
-	conservativeAmountOut := actualAmountOut.Mul(safetyMargin).Quo(cosmath.NewInt(100))
+	// Step 3: 计算费用
+	if baseInput && swapStep.SqrtPriceX64Next.Cmp(sqrtPriceX64Target) != 0 {
+		swapStep.FeeAmount = new(big.Int).Sub(amountRemaining, swapStep.AmountIn)
+	} else {
+		feeRateBig := cosmath.NewInt(int64(feeRate))
+		feeRateSubtracted := FEE_RATE_DENOMINATOR.Sub(feeRateBig)
+		swapStep.FeeAmount = whirlpoolMulDivCeil(
+			cosmath.NewIntFromBigInt(swapStep.AmountIn),
+			feeRateBig,
+			feeRateSubtracted,
+		).BigInt()
+	}
+
+	// 应用适中的安全边际 (10% 而不是 80%)
+	safetyMargin := cosmath.NewInt(90) // 保留 90% 的计算结果
+	adjustedAmountOut := cosmath.NewIntFromBigInt(swapStep.AmountOut).Mul(safetyMargin).Quo(cosmath.NewInt(100))
 
 	// 确保最小输出
-	if conservativeAmountOut.IsZero() && actualAmountOut.GT(cosmath.ZeroInt()) {
-		conservativeAmountOut = cosmath.NewInt(1)
+	if adjustedAmountOut.IsZero() && swapStep.AmountOut.Cmp(zero) > 0 {
+		adjustedAmountOut = cosmath.NewInt(1)
 	}
 
-	// Step 4: 验证结果合理性
-	if conservativeAmountOut.IsZero() {
-		return cosmath.Int{}, cosmath.Int{}, cosmath.Int{}, cosmath.Int{},
-			fmt.Errorf("computed amount out is zero: liquidity=%s, netAmountIn=%s, actualOut=%s",
-				liquidity.String(), netAmountIn.String(), actualAmountOut.String())
-	}
-
-	// 返回保守的价格作为下一个价格（小幅变化）
-	newSqrtPrice := sqrtPriceCurrent
-	if zeroForOne {
-		newSqrtPrice = sqrtPriceCurrent.Mul(cosmath.NewInt(9995)).Quo(cosmath.NewInt(10000)) // 下降0.05%
-	} else {
-		newSqrtPrice = sqrtPriceCurrent.Mul(cosmath.NewInt(10005)).Quo(cosmath.NewInt(10000)) // 上升0.05%
-	}
-
-	return newSqrtPrice, baseAmount, conservativeAmountOut, feeAmount, nil
+	return cosmath.NewIntFromBigInt(swapStep.SqrtPriceX64Next),
+		cosmath.NewIntFromBigInt(swapStep.AmountIn),
+		adjustedAmountOut,
+		cosmath.NewIntFromBigInt(swapStep.FeeAmount), nil
 }
 
 // getOrCreateTokenAccount 获取或创建用户的代币账户
@@ -920,4 +1006,241 @@ func createWhirlpoolSwapV2Instruction(
 		accounts,
 		buf.Bytes(),
 	), nil
+}
+
+// WhirlpoolSwapStep - Whirlpool 交换步骤结构
+type WhirlpoolSwapStep struct {
+	SqrtPriceX64Next *big.Int
+	AmountIn         *big.Int
+	AmountOut        *big.Int
+	FeeAmount        *big.Int
+}
+
+// Whirlpool CLMM 精确计算相关常量
+// U64Resolution 已经在 constants.go 中定义
+
+// whirlpoolMulDivFloor - 乘除法（向下取整）
+func whirlpoolMulDivFloor(a, b, denominator cosmath.Int) cosmath.Int {
+	if denominator.IsZero() {
+		panic("division by zero")
+	}
+	numerator := a.Mul(b)
+	return numerator.Quo(denominator)
+}
+
+// whirlpoolMulDivCeil - 乘除法（向上取整）
+func whirlpoolMulDivCeil(a, b, denominator cosmath.Int) cosmath.Int {
+	if denominator.IsZero() {
+		return cosmath.Int{}
+	}
+	numerator := a.Mul(b).Add(denominator.Sub(cosmath.OneInt()))
+	return numerator.Quo(denominator)
+}
+
+// whirlpoolGetTokenAmountAFromLiquidity - 从流动性计算 Token A 数量
+func whirlpoolGetTokenAmountAFromLiquidity(
+	sqrtPriceX64A *big.Int,
+	sqrtPriceX64B *big.Int,
+	liquidity *big.Int,
+	roundUp bool,
+) *big.Int {
+	// 创建副本避免修改原始值
+	priceA := new(big.Int).Set(sqrtPriceX64A)
+	priceB := new(big.Int).Set(sqrtPriceX64B)
+
+	// 确保 priceA <= priceB
+	if priceA.Cmp(priceB) > 0 {
+		priceA, priceB = priceB, priceA
+	}
+
+	if priceA.Cmp(big.NewInt(0)) <= 0 {
+		panic("sqrtPriceX64A must be greater than 0")
+	}
+
+	// 计算 numerator1 = liquidity << U64Resolution
+	numerator1 := new(big.Int).Lsh(liquidity, U64Resolution)
+	// 计算 numerator2 = priceB - priceA
+	numerator2 := new(big.Int).Sub(priceB, priceA)
+
+	if roundUp {
+		// 向上取整计算
+		temp := whirlpoolMulDivCeil(
+			cosmath.NewIntFromBigInt(numerator1),
+			cosmath.NewIntFromBigInt(numerator2),
+			cosmath.NewIntFromBigInt(priceB),
+		)
+		return whirlpoolMulDivCeil(
+			temp,
+			cosmath.NewIntFromBigInt(big.NewInt(1)),
+			cosmath.NewIntFromBigInt(priceA),
+		).BigInt()
+	} else {
+		// 向下取整计算
+		temp := whirlpoolMulDivFloor(
+			cosmath.NewIntFromBigInt(numerator1),
+			cosmath.NewIntFromBigInt(numerator2),
+			cosmath.NewIntFromBigInt(priceB),
+		)
+		return temp.Quo(cosmath.NewIntFromBigInt(priceA)).BigInt()
+	}
+}
+
+// whirlpoolGetTokenAmountBFromLiquidity - 从流动性计算 Token B 数量
+func whirlpoolGetTokenAmountBFromLiquidity(
+	sqrtPriceX64A *big.Int,
+	sqrtPriceX64B *big.Int,
+	liquidity *big.Int,
+	roundUp bool,
+) *big.Int {
+	// 创建副本避免修改原始值
+	priceA := new(big.Int).Set(sqrtPriceX64A)
+	priceB := new(big.Int).Set(sqrtPriceX64B)
+
+	// 确保 priceA <= priceB
+	if priceA.Cmp(priceB) > 0 {
+		priceA, priceB = priceB, priceA
+	}
+
+	if priceA.Cmp(big.NewInt(0)) <= 0 {
+		panic("sqrtPriceX64A must be greater than 0")
+	}
+
+	// 计算价格差
+	priceDiff := new(big.Int).Sub(priceB, priceA)
+	denominator := new(big.Int).Lsh(big.NewInt(1), U64Resolution)
+
+	if roundUp {
+		return whirlpoolMulDivCeil(
+			cosmath.NewIntFromBigInt(liquidity),
+			cosmath.NewIntFromBigInt(priceDiff),
+			cosmath.NewIntFromBigInt(denominator),
+		).BigInt()
+	} else {
+		return whirlpoolMulDivFloor(
+			cosmath.NewIntFromBigInt(liquidity),
+			cosmath.NewIntFromBigInt(priceDiff),
+			cosmath.NewIntFromBigInt(denominator),
+		).BigInt()
+	}
+}
+
+// whirlpoolGetNextSqrtPriceX64FromInput - 从输入金额计算下个平方根价格
+func whirlpoolGetNextSqrtPriceX64FromInput(
+	sqrtPriceX64Current *big.Int,
+	liquidity *big.Int,
+	amount *big.Int,
+	zeroForOne bool,
+) *big.Int {
+	if sqrtPriceX64Current.Cmp(big.NewInt(0)) <= 0 {
+		panic("sqrtPriceX64Current must be greater than 0")
+	}
+	if liquidity.Cmp(big.NewInt(0)) <= 0 {
+		panic("liquidity must be greater than 0")
+	}
+
+	if amount.Cmp(big.NewInt(0)) == 0 {
+		return sqrtPriceX64Current
+	}
+
+	if zeroForOne {
+		return whirlpoolGetNextSqrtPriceFromTokenAmountARoundingUp(
+			sqrtPriceX64Current, liquidity, amount, true)
+	} else {
+		return whirlpoolGetNextSqrtPriceFromTokenAmountBRoundingDown(
+			sqrtPriceX64Current, liquidity, amount, true)
+	}
+}
+
+// whirlpoolGetNextSqrtPriceX64FromOutput - 从输出金额计算下个平方根价格
+func whirlpoolGetNextSqrtPriceX64FromOutput(
+	sqrtPriceX64Current *big.Int,
+	liquidity *big.Int,
+	amount *big.Int,
+	zeroForOne bool,
+) *big.Int {
+	if sqrtPriceX64Current.Cmp(big.NewInt(0)) <= 0 {
+		panic("sqrtPriceX64Current must be greater than 0")
+	}
+	if liquidity.Cmp(big.NewInt(0)) <= 0 {
+		panic("liquidity must be greater than 0")
+	}
+
+	if zeroForOne {
+		return whirlpoolGetNextSqrtPriceFromTokenAmountBRoundingDown(
+			sqrtPriceX64Current, liquidity, amount, false)
+	} else {
+		return whirlpoolGetNextSqrtPriceFromTokenAmountARoundingUp(
+			sqrtPriceX64Current, liquidity, amount, false)
+	}
+}
+
+// whirlpoolGetNextSqrtPriceFromTokenAmountARoundingUp - 从 Token A 数量计算平方根价格（向上取整）
+func whirlpoolGetNextSqrtPriceFromTokenAmountARoundingUp(
+	sqrtPriceX64 *big.Int,
+	liquidity *big.Int,
+	amount *big.Int,
+	add bool,
+) *big.Int {
+	if amount.Cmp(big.NewInt(0)) == 0 {
+		return sqrtPriceX64
+	}
+
+	liquidityLeftShift := new(big.Int).Lsh(liquidity, U64Resolution)
+
+	if add {
+		numerator1 := liquidityLeftShift
+		denominator := new(big.Int).Add(liquidityLeftShift, new(big.Int).Mul(amount, sqrtPriceX64))
+		if denominator.Cmp(numerator1) >= 0 {
+			return whirlpoolMulDivCeil(
+				cosmath.NewIntFromBigInt(numerator1),
+				cosmath.NewIntFromBigInt(sqrtPriceX64),
+				cosmath.NewIntFromBigInt(denominator),
+			).BigInt()
+		}
+
+		temp := new(big.Int).Div(numerator1, sqrtPriceX64)
+		temp.Add(temp, amount)
+		return whirlpoolMulDivRoundingUp(numerator1, big.NewInt(1), temp)
+	} else {
+		amountMulSqrtPrice := new(big.Int).Mul(amount, sqrtPriceX64)
+		if liquidityLeftShift.Cmp(amountMulSqrtPrice) <= 0 {
+			panic("liquidity must be greater than amount * sqrtPrice")
+		}
+		denominator := new(big.Int).Sub(liquidityLeftShift, amountMulSqrtPrice)
+		return whirlpoolMulDivCeil(
+			cosmath.NewIntFromBigInt(liquidityLeftShift),
+			cosmath.NewIntFromBigInt(sqrtPriceX64),
+			cosmath.NewIntFromBigInt(denominator),
+		).BigInt()
+	}
+}
+
+// whirlpoolGetNextSqrtPriceFromTokenAmountBRoundingDown - 从 Token B 数量计算平方根价格（向下取整）
+func whirlpoolGetNextSqrtPriceFromTokenAmountBRoundingDown(
+	sqrtPriceX64 *big.Int,
+	liquidity *big.Int,
+	amount *big.Int,
+	add bool,
+) *big.Int {
+	deltaY := new(big.Int).Lsh(amount, U64Resolution)
+
+	if add {
+		return new(big.Int).Add(sqrtPriceX64, new(big.Int).Div(deltaY, liquidity))
+	} else {
+		amountDivLiquidity := whirlpoolMulDivRoundingUp(deltaY, big.NewInt(1), liquidity)
+		if sqrtPriceX64.Cmp(amountDivLiquidity) <= 0 {
+			panic("sqrtPriceX64 must be greater than amountDivLiquidity")
+		}
+		return new(big.Int).Sub(sqrtPriceX64, amountDivLiquidity)
+	}
+}
+
+// whirlpoolMulDivRoundingUp - 乘除法向上取整
+func whirlpoolMulDivRoundingUp(a, b, denominator *big.Int) *big.Int {
+	numerator := new(big.Int).Mul(a, b)
+	result := new(big.Int).Div(numerator, denominator)
+	if new(big.Int).Mod(numerator, denominator).Cmp(big.NewInt(0)) != 0 {
+		result.Add(result, big.NewInt(1))
+	}
+	return result
 }
