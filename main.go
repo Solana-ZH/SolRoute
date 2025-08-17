@@ -86,6 +86,7 @@ func main() {
 
 	// Calculate minimum output amount with slippage
 	minAmountOut := amountOut.Mul(math.NewInt(10000 - slippageBps)).Quo(math.NewInt(10000))
+	log.Printf("Amount out: %s, Min amount out: %s (slippage: %d bps)", amountOut.String(), minAmountOut.String(), slippageBps)
 
 	// Build swap instructions (注意: 我们是用 WSOL 换 USDC)
 	instructions, err := bestPool.BuildSwapInstructions(ctx, solClient.RpcClient,

@@ -47,6 +47,8 @@ var (
 	// Whirlpool 账户种子
 	WHIRLPOOL_SEED = "whirlpool"
 
+	// Whirlpool Swap 指令判别器 (从 IDL 中获取)
+	SwapDiscriminator = []byte{248, 198, 158, 145, 225, 117, 135, 200}
 	// Whirlpool Swap V2 指令判别器 (从 IDL 中获取)
 	SwapV2Discriminator = []byte{43, 4, 237, 11, 26, 201, 30, 98} // 需要从实际 IDL 验证
 

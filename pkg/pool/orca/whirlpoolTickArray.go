@@ -1,7 +1,6 @@
 package orca
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
@@ -262,18 +261,18 @@ func MostSignificantBit(bitNum int, data *big.Int) *int {
 }
 
 // DeriveWhirlpoolTickArrayPDA 推导 Whirlpool tick array 的 PDA 地址
-// 基于 Solana PDA 推导规则：种子 = ["tick_array", whirlpool_pubkey, start_tick_index]
+// 基于 Whirlpool 源码实现：种子 = ["tick_array", whirlpool_pubkey, start_tick_index.to_string()]
 func DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey solana.PublicKey, startTickIndex int64) (solana.PublicKey, error) {
-	// 将 start_tick_index 转换为字节数组 (little endian, 4 bytes)
-	startTickIndexBytes := make([]byte, 4)
-	// 使用 binary 包进行小端序编码
-	binary.LittleEndian.PutUint32(startTickIndexBytes, uint32(startTickIndex))
+	// 将 start_tick_index 转换为字符串字节数组，与 Whirlpool 源码保持一致
+	// 源码：start_tick_index.to_string().as_bytes()
+	startTickIndexStr := fmt.Sprintf("%d", startTickIndex)
+	startTickIndexBytes := []byte(startTickIndexStr)
 
 	// 构建种子
 	seeds := [][]byte{
 		[]byte(TICK_ARRAY_SEED), // "tick_array"
 		whirlpoolPubkey.Bytes(), // whirlpool 地址 (32 bytes)
-		startTickIndexBytes,     // start_tick_index (4 bytes, little endian)
+		startTickIndexBytes,     // start_tick_index 字符串字节
 	}
 
 	// 推导 PDA
@@ -287,42 +286,76 @@ func DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey solana.PublicKey, startTickInde
 
 // DeriveMultipleWhirlpoolTickArrayPDAs 推导多个 tick array PDA 地址
 // 用于交换指令中需要的 tick_array0, tick_array1, tick_array2
-func DeriveMultipleWhirlpoolTickArrayPDAs(whirlpoolPubkey solana.PublicKey, currentTick int64, tickSpacing int64, zeroForOne bool) (tickArray0, tickArray1, tickArray2 solana.PublicKey, err error) {
-	// 1. 计算当前 tick 所在的 tick array 起始索引
-	currentStartIndex := getWhirlpoolTickArrayStartIndexByTick(currentTick, tickSpacing)
+// 根据 Whirlpool 源码实现正确的 tick array 序列计算
+func DeriveMultipleWhirlpoolTickArrayPDAs(whirlpoolPubkey solana.PublicKey, currentTick int64, tickSpacing int64, aToB bool) (tickArray0, tickArray1, tickArray2 solana.PublicKey, err error) {
+	// 1. 基于 Whirlpool 源码的 get_start_tick_indexes 函数实现
+	tickCurrentIndex := int32(currentTick)
+	tickSpacingI32 := int32(tickSpacing)
+	ticksInArray := TICK_ARRAY_SIZE * tickSpacingI32 // TICK_ARRAY_SIZE = 88
 
-	// 2. 根据交换方向计算相邻的 tick array 起始索引
-	tickCount := getWhirlpoolTickCount(tickSpacing)
+	// 2. 计算 start_tick_index_base（向下整除）
+	startTickIndexBase := floorDivision(tickCurrentIndex, ticksInArray) * ticksInArray
 
-	var startIndex0, startIndex1, startIndex2 int64
-
-	if zeroForOne {
-		// A -> B: 价格下降，需要访问当前及更低的 tick array
-		startIndex0 = currentStartIndex
-		startIndex1 = currentStartIndex - tickCount
-		startIndex2 = currentStartIndex - 2*tickCount
+	// 3. 根据交换方向计算偏移量
+	var offsets []int32
+	if aToB {
+		// A -> B: 价格下降，需要当前及之前的 tick arrays
+		offsets = []int32{0, -1, -2}
 	} else {
-		// B -> A: 价格上升，需要访问当前及更高的 tick array
-		startIndex0 = currentStartIndex
-		startIndex1 = currentStartIndex + tickCount
-		startIndex2 = currentStartIndex + 2*tickCount
+		// B -> A: 价格上升，需要当前及之后的 tick arrays
+		// 检查是否已跨越到下一个 tick array
+		shifted := tickCurrentIndex+tickSpacingI32 >= startTickIndexBase+ticksInArray
+		if shifted {
+			offsets = []int32{1, 2, 3}
+		} else {
+			offsets = []int32{0, 1, 2}
+		}
 	}
 
-	// 3. 推导三个 tick array PDA
-	tickArray0, err = DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey, startIndex0)
+	// 4. 推导三个 tick array PDA
+	startIndex0 := startTickIndexBase + offsets[0]*ticksInArray
+	tickArray0, err = DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey, int64(startIndex0))
 	if err != nil {
 		return solana.PublicKey{}, solana.PublicKey{}, solana.PublicKey{}, fmt.Errorf("failed to derive tick_array0: %w", err)
 	}
 
-	tickArray1, err = DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey, startIndex1)
+	startIndex1 := startTickIndexBase + offsets[1]*ticksInArray
+	tickArray1, err = DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey, int64(startIndex1))
 	if err != nil {
 		return solana.PublicKey{}, solana.PublicKey{}, solana.PublicKey{}, fmt.Errorf("failed to derive tick_array1: %w", err)
 	}
 
-	tickArray2, err = DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey, startIndex2)
+	startIndex2 := startTickIndexBase + offsets[2]*ticksInArray
+	tickArray2, err = DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey, int64(startIndex2))
 	if err != nil {
 		return solana.PublicKey{}, solana.PublicKey{}, solana.PublicKey{}, fmt.Errorf("failed to derive tick_array2: %w", err)
 	}
 
 	return tickArray0, tickArray1, tickArray2, nil
+}
+
+// floorDivision 实现整数除法（向下取整），与 Whirlpool 源码中的 floor_division 一致
+func floorDivision(dividend, divisor int32) int32 {
+	if (dividend < 0) != (divisor < 0) && dividend%divisor != 0 {
+		return dividend/divisor - 1
+	}
+	return dividend / divisor
+}
+
+// DeriveWhirlpoolOraclePDA 推导 Whirlpool Oracle 的 PDA 地址
+// 基于 Solana PDA 推导规则：种子 = ["oracle", whirlpool_pubkey]
+func DeriveWhirlpoolOraclePDA(whirlpoolPubkey solana.PublicKey) (solana.PublicKey, error) {
+	// 构建种子
+	seeds := [][]byte{
+		[]byte("oracle"),        // "oracle"
+		whirlpoolPubkey.Bytes(), // whirlpool 地址 (32 bytes)
+	}
+
+	// 推导 PDA
+	pda, _, err := solana.FindProgramAddress(seeds, ORCA_WHIRLPOOL_PROGRAM_ID)
+	if err != nil {
+		return solana.PublicKey{}, fmt.Errorf("failed to find program address for oracle: %w", err)
+	}
+
+	return pda, nil
 }
