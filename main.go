@@ -63,7 +63,6 @@ func main() {
 		protocol.NewRaydiumClmm(solClient),
 		protocol.NewRaydiumCpmm(solClient),
 		protocol.NewMeteoraDlmm(solClient),
-		protocol.NewOrcaWhirlpool(solClient),
 	)
 
 	// Query available pools
@@ -86,11 +85,10 @@ func main() {
 
 	// Calculate minimum output amount with slippage
 	minAmountOut := amountOut.Mul(math.NewInt(10000 - slippageBps)).Quo(math.NewInt(10000))
-	log.Printf("Amount out: %s, Min amount out: %s (slippage: %d bps)", amountOut.String(), minAmountOut.String(), slippageBps)
 
-	// Build swap instructions (Note: we're swapping WSOL for USDC)
+	// Build swap instructions
 	instructions, err := bestPool.BuildSwapInstructions(ctx, solClient.RpcClient,
-		privateKey.PublicKey(), sol.WSOL.String(), amountIn, minAmountOut)
+		privateKey.PublicKey(), usdcTokenAddr, amountIn, minAmountOut)
 	if err != nil {
 		log.Fatalf("Failed to build swap instructions: %v", err)
 	}
