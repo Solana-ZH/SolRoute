@@ -60,12 +60,12 @@ func (p *RaydiumClmmProtocol) FetchPoolsByPair(ctx context.Context, baseMint str
 		}
 		layout.ExBitmapAddress = exBitmapAddress
 
-		// 检查池是否启用了 Swap 功能，只有启用了才加入结果
+		// Check if pool has Swap functionality enabled, only add to results if enabled
 		if !layout.IsSwapEnabled() {
 			continue
 		}
 
-		// 在这里我们不设置用户账户，留到 BuildSwapInstructions 中处理
+		// We don't set user accounts here, leave it to BuildSwapInstructions to handle
 		res = append(res, layout)
 	}
 	return res, nil
@@ -125,7 +125,7 @@ func (r *RaydiumClmmProtocol) FetchPoolByID(ctx context.Context, poolId string) 
 	}
 	layout.PoolId = poolIdKey
 
-	// 检查池是否启用了 Swap 功能
+	// Check if pool has Swap functionality enabled
 	if !layout.IsSwapEnabled() {
 		return nil, fmt.Errorf("pool %s has swap functionality disabled", poolId)
 	}

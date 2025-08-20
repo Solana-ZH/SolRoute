@@ -17,21 +17,21 @@ import (
 	"lukechampine.com/uint128"
 )
 
-// WhirlpoolPool 结构体 - 映射自 Orca Whirlpool 账户结构
+// WhirlpoolPool struct - Mapped from Orca Whirlpool account structure
 //
-// 这个结构体精确映射了 Orca Whirlpool V2 协议的池账户数据格式。
-// 数据结构基于 external/orca/whirlpool/generated/types.go 的 Whirlpool 结构，
-// 并针对字段命名差异进行了适配：
+// This struct precisely maps the pool account data format of Orca Whirlpool V2 protocol.
+// Data structure is based on Whirlpool struct from external/orca/whirlpool/generated/types.go,
+// and adapted for field naming differences:
 //   - CLMM: TokenMint0/1 → Whirlpool: TokenMintA/B
 //   - CLMM: SqrtPriceX64 → Whirlpool: SqrtPrice
 //   - CLMM: TickCurrent → Whirlpool: TickCurrentIndex
 //
-// 总账户大小: 653 字节 (包含 8 字节 discriminator)
+// Total account size: 653 bytes (including 8-byte discriminator)
 type WhirlpoolPool struct {
 	// 8 bytes discriminator
 	Discriminator [8]uint8 `bin:"skip"`
 
-	// 核心配置 - 映射自 external/orca/whirlpool/generated/types.go 的 Whirlpool 结构
+	// Core configuration - Mapped from Whirlpool struct in external/orca/whirlpool/generated/types.go
 	WhirlpoolsConfig solana.PublicKey // whirlpoolsConfig
 	WhirlpoolBump    [1]uint8         // whirlpoolBump
 	TickSpacing      uint16           // tickSpacing
@@ -39,35 +39,35 @@ type WhirlpoolPool struct {
 	FeeRate          uint16           // feeRate
 	ProtocolFeeRate  uint16           // protocolFeeRate
 
-	// 流动性状态 - 字段名映射: SqrtPriceX64 -> SqrtPrice, TickCurrent -> TickCurrentIndex
+	// Liquidity state - Field name mapping: SqrtPriceX64 -> SqrtPrice, TickCurrent -> TickCurrentIndex
 	Liquidity        uint128.Uint128 // liquidity
-	SqrtPrice        uint128.Uint128 // sqrtPrice (注意：CLMM 用 SqrtPriceX64)
-	TickCurrentIndex int32           // tickCurrentIndex (注意：CLMM 用 TickCurrent)
+	SqrtPrice        uint128.Uint128 // sqrtPrice (note: CLMM uses SqrtPriceX64)
+	TickCurrentIndex int32           // tickCurrentIndex (note: CLMM uses TickCurrent)
 
-	// 协议费用
+	// Protocol fees
 	ProtocolFeeOwedA uint64 // protocolFeeOwedA
 	ProtocolFeeOwedB uint64 // protocolFeeOwedB
 
-	// 代币配置 - 字段名映射: TokenMint0/1 -> TokenMintA/B
-	TokenMintA       solana.PublicKey // tokenMintA (注意：CLMM 用 TokenMint0)
-	TokenVaultA      solana.PublicKey // tokenVaultA (注意：CLMM 用 TokenVault0)
+	// Token configuration - Field name mapping: TokenMint0/1 -> TokenMintA/B
+	TokenMintA       solana.PublicKey // tokenMintA (note: CLMM uses TokenMint0)
+	TokenVaultA      solana.PublicKey // tokenVaultA (note: CLMM uses TokenVault0)
 	FeeGrowthGlobalA uint128.Uint128  // feeGrowthGlobalA
 
-	TokenMintB       solana.PublicKey // tokenMintB (注意：CLMM 用 TokenMint1)
-	TokenVaultB      solana.PublicKey // tokenVaultB (注意：CLMM 用 TokenVault1)
+	TokenMintB       solana.PublicKey // tokenMintB (note: CLMM uses TokenMint1)
+	TokenVaultB      solana.PublicKey // tokenVaultB (note: CLMM uses TokenVault1)
 	FeeGrowthGlobalB uint128.Uint128  // feeGrowthGlobalB
 
-	// 奖励信息
+	// Reward information
 	RewardLastUpdatedTimestamp uint64                 // rewardLastUpdatedTimestamp
 	RewardInfos                [3]WhirlpoolRewardInfo // rewardInfos
 
-	// 内部使用字段
-	PoolId           solana.PublicKey // 池 ID (内部计算)
-	UserBaseAccount  solana.PublicKey // 用户基础代币账户
-	UserQuoteAccount solana.PublicKey // 用户报价代币账户
+	// Internal use fields
+	PoolId           solana.PublicKey // Pool ID (internal calculation)
+	UserBaseAccount  solana.PublicKey // User base token account
+	UserQuoteAccount solana.PublicKey // User quote token account
 }
 
-// WhirlpoolRewardInfo 奖励信息结构 - 参考 external/orca/whirlpool/generated/types.go
+// WhirlpoolRewardInfo reward information structure - Reference external/orca/whirlpool/generated/types.go
 type WhirlpoolRewardInfo struct {
 	Mint                  solana.PublicKey // mint
 	Vault                 solana.PublicKey // vault
@@ -76,7 +76,7 @@ type WhirlpoolRewardInfo struct {
 	GrowthGlobalX64       uint128.Uint128  // growthGlobalX64
 }
 
-// 实现 Pool 接口的基础方法
+// Implement basic methods of Pool interface
 func (pool *WhirlpoolPool) ProtocolName() pkg.ProtocolName {
 	return pkg.ProtocolNameOrcaWhirlpool
 }
@@ -93,12 +93,12 @@ func (pool *WhirlpoolPool) GetID() string {
 	return pool.PoolId.String()
 }
 
-// GetTokens 返回代币对 - 注意字段名映射
+// GetTokens returns token pair - Note field name mapping
 func (pool *WhirlpoolPool) GetTokens() (baseMint, quoteMint string) {
 	return pool.TokenMintA.String(), pool.TokenMintB.String()
 }
 
-// Decode 解析 Whirlpool 账户数据 - 参考 CLMM 的 Decode 实现
+// Decode parses Whirlpool account data - Reference CLMM Decode implementation
 func (pool *WhirlpoolPool) Decode(data []byte) error {
 	// Skip 8 bytes discriminator if present
 	if len(data) > 8 {
@@ -135,11 +135,11 @@ func (pool *WhirlpoolPool) Decode(data []byte) error {
 	pool.Liquidity = uint128.FromBytes(data[offset : offset+16])
 	offset += 16
 
-	// Parse sqrt price (16 bytes) - 注意：CLMM 叫 SqrtPriceX64
+	// Parse sqrt price (16 bytes) - Note: CLMM calls it SqrtPriceX64
 	pool.SqrtPrice = uint128.FromBytes(data[offset : offset+16])
 	offset += 16
 
-	// Parse tick current index (4 bytes) - 注意：CLMM 叫 TickCurrent
+	// Parse tick current index (4 bytes) - Note: CLMM calls it TickCurrent
 	pool.TickCurrentIndex = int32(binary.LittleEndian.Uint32(data[offset : offset+4]))
 	offset += 4
 
@@ -151,11 +151,11 @@ func (pool *WhirlpoolPool) Decode(data []byte) error {
 	pool.ProtocolFeeOwedB = binary.LittleEndian.Uint64(data[offset : offset+8])
 	offset += 8
 
-	// Parse token mint A (32 bytes) - 注意：CLMM 叫 TokenMint0
+	// Parse token mint A (32 bytes) - Note: CLMM calls it TokenMint0
 	pool.TokenMintA = solana.PublicKeyFromBytes(data[offset : offset+32])
 	offset += 32
 
-	// Parse token vault A (32 bytes) - 注意：CLMM 叫 TokenVault0
+	// Parse token vault A (32 bytes) - Note: CLMM calls it TokenVault0
 	pool.TokenVaultA = solana.PublicKeyFromBytes(data[offset : offset+32])
 	offset += 32
 
@@ -163,11 +163,11 @@ func (pool *WhirlpoolPool) Decode(data []byte) error {
 	pool.FeeGrowthGlobalA = uint128.FromBytes(data[offset : offset+16])
 	offset += 16
 
-	// Parse token mint B (32 bytes) - 注意：CLMM 叫 TokenMint1
+	// Parse token mint B (32 bytes) - Note: CLMM calls it TokenMint1
 	pool.TokenMintB = solana.PublicKeyFromBytes(data[offset : offset+32])
 	offset += 32
 
-	// Parse token vault B (32 bytes) - 注意：CLMM 叫 TokenVault1
+	// Parse token vault B (32 bytes) - Note: CLMM calls it TokenVault1
 	pool.TokenVaultB = solana.PublicKeyFromBytes(data[offset : offset+32])
 	offset += 32
 
@@ -179,7 +179,7 @@ func (pool *WhirlpoolPool) Decode(data []byte) error {
 	pool.RewardLastUpdatedTimestamp = binary.LittleEndian.Uint64(data[offset : offset+8])
 	offset += 8
 
-	// Parse reward infos (3 个奖励信息，每个包含多个字段)
+	// Parse reward infos (3 reward infos, each containing multiple fields)
 	for i := 0; i < 3; i++ {
 		// mint (32 bytes)
 		pool.RewardInfos[i].Mint = solana.PublicKeyFromBytes(data[offset : offset+32])
@@ -205,9 +205,9 @@ func (pool *WhirlpoolPool) Decode(data []byte) error {
 	return nil
 }
 
-// Span 返回账户数据大小 - 根据 Whirlpool 完整结构精确计算
+// Span returns account data size - Precise calculation based on complete Whirlpool structure
 func (pool *WhirlpoolPool) Span() uint64 {
-	// 基于 external/orca/whirlpool/generated/types.go 的 Whirlpool 结构计算:
+	// Based on Whirlpool structure calculation from external/orca/whirlpool/generated/types.go:
 	//
 	// 8 bytes discriminator
 	// 32 bytes whirlpoolsConfig (PublicKey)
@@ -228,58 +228,58 @@ func (pool *WhirlpoolPool) Span() uint64 {
 	// 32 bytes tokenVaultB (PublicKey)
 	// 16 bytes feeGrowthGlobalB (Uint128)
 	// 8 bytes rewardLastUpdatedTimestamp (uint64)
-	// 3 * (32+32+32+16+16) bytes rewardInfos (3个WhirlpoolRewardInfo)
-	//   每个 WhirlpoolRewardInfo: mint(32) + vault(32) + authority(32) + emissionsPerSecondX64(16) + growthGlobalX64(16) = 128 bytes
+	// 3 * (32+32+32+16+16) bytes rewardInfos (3 WhirlpoolRewardInfo)
+	//   Each WhirlpoolRewardInfo: mint(32) + vault(32) + authority(32) + emissionsPerSecondX64(16) + growthGlobalX64(16) = 128 bytes
 
 	return uint64(8 + 32 + 1 + 2 + 2 + 2 + 2 + 16 + 16 + 4 + 8 + 8 + 32 + 32 + 16 + 32 + 32 + 16 + 8 + 3*128)
-	// = 8 + 261 + 384 = 653 bytes (包含 discriminator)
+	// = 8 + 261 + 384 = 653 bytes (including discriminator)
 }
 
-// Offset 返回字段偏移量 - 用于 RPC 查询过滤器
+// Offset returns field offset - Used for RPC query filters
 func (pool *WhirlpoolPool) Offset(field string) uint64 {
 	// Add 8 bytes for discriminator
 	baseOffset := uint64(8)
 
 	switch field {
 	case "TokenMintA":
-		// 基于 Whirlpool 结构的精确偏移计算:
+		// Precise offset calculation based on Whirlpool structure:
 		// whirlpoolsConfig(32) + whirlpoolBump(1) + tickSpacing(2) + feeTierIndexSeed(2) +
 		// feeRate(2) + protocolFeeRate(2) + liquidity(16) + sqrtPrice(16) +
 		// tickCurrentIndex(4) + protocolFeeOwedA(8) + protocolFeeOwedB(8)
 		return baseOffset + 32 + 1 + 2 + 2 + 2 + 2 + 16 + 16 + 4 + 8 + 8 // = 101
 	case "TokenMintB":
-		// TokenMintA 之后: tokenMintA(32) + tokenVaultA(32) + feeGrowthGlobalA(16)
-		// 注意：实际验证发现 TokenMintB 在偏移量 181，不是 189
-		return baseOffset + 101 + 32 + 32 + 16 - 8 // = 181 (修正 8 字节差异)
+		// After TokenMintA: tokenMintA(32) + tokenVaultA(32) + feeGrowthGlobalA(16)
+		// Note: Actual verification found TokenMintB at offset 181, not 189
+		return baseOffset + 101 + 32 + 32 + 16 - 8 // = 181 (corrected 8-byte difference)
 	case "TickSpacing":
-		// whirlpoolsConfig(32) + whirlpoolBump(1) 之后
+		// After whirlpoolsConfig(32) + whirlpoolBump(1)
 		return baseOffset + 32 + 1 // = 41
 	case "FeeRate":
-		// whirlpoolsConfig(32) + whirlpoolBump(1) + tickSpacing(2) + feeTierIndexSeed(2) 之后
+		// After whirlpoolsConfig(32) + whirlpoolBump(1) + tickSpacing(2) + feeTierIndexSeed(2)
 		return baseOffset + 32 + 1 + 2 + 2 // = 45
 	case "SqrtPrice":
-		// 在 liquidity 之后
+		// After liquidity
 		return baseOffset + 32 + 1 + 2 + 2 + 2 + 2 + 16 // = 65
 	case "TickCurrentIndex":
-		// 在 sqrtPrice 之后
+		// After sqrtPrice
 		return baseOffset + 32 + 1 + 2 + 2 + 2 + 2 + 16 + 16 // = 81
 	}
 	return 0
 }
 
-// Quote 方法 - 获取交换报价 (带边界验证和错误处理)
+// Quote method - Get swap quote (with boundary validation and error handling)
 func (pool *WhirlpoolPool) Quote(ctx context.Context, solClient *rpc.Client, inputMint string, inputAmount cosmath.Int) (cosmath.Int, error) {
-	// 1. 输入验证
+	// 1. Input validation
 	if err := pool.validateQuoteInputs(inputMint, inputAmount); err != nil {
 		return cosmath.Int{}, fmt.Errorf("quote input validation failed: %w", err)
 	}
 
-	// 2. 池状态验证
+	// 2. Pool state validation
 	if err := pool.validatePoolState(); err != nil {
 		return cosmath.Int{}, fmt.Errorf("pool state validation failed: %w", err)
 	}
 
-	// 3. 计算报价 (带重试机制)
+	// 3. Calculate quote (with retry mechanism)
 	maxRetries := 2
 	var lastErr error
 
@@ -288,10 +288,10 @@ func (pool *WhirlpoolPool) Quote(ctx context.Context, solClient *rpc.Client, inp
 		var err error
 
 		if inputMint == pool.TokenMintA.String() {
-			// A -> B 交换
+			// A -> B swap
 			priceResult, err = pool.ComputeWhirlpoolAmountOutFormat(pool.TokenMintA.String(), inputAmount)
 		} else if inputMint == pool.TokenMintB.String() {
-			// B -> A 交换
+			// B -> A swap
 			priceResult, err = pool.ComputeWhirlpoolAmountOutFormat(pool.TokenMintB.String(), inputAmount)
 		} else {
 			return cosmath.Int{}, fmt.Errorf("input mint %s not found in pool %s", inputMint, pool.PoolId.String())
@@ -299,7 +299,7 @@ func (pool *WhirlpoolPool) Quote(ctx context.Context, solClient *rpc.Client, inp
 
 		if err != nil {
 			lastErr = err
-			// 如果是计算错误且还有重试次数，短暂等待后重试
+			// If calculation error and retries remaining, wait briefly and retry
 			if attempt < maxRetries && isTemporaryError(err) {
 				time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
 				continue
@@ -307,20 +307,20 @@ func (pool *WhirlpoolPool) Quote(ctx context.Context, solClient *rpc.Client, inp
 			return cosmath.Int{}, fmt.Errorf("amount calculation failed after %d attempts: %w", attempt+1, err)
 		}
 
-		// 4. 输出验证
+		// 4. Output validation
 		if err := pool.validateQuoteOutput(priceResult); err != nil {
 			return cosmath.Int{}, fmt.Errorf("quote output validation failed: %w", err)
 		}
 
-		return priceResult.Neg(), nil // 返回负数表示输出金额
+		return priceResult.Neg(), nil // Return negative number to indicate output amount
 	}
 
 	return cosmath.Int{}, fmt.Errorf("quote calculation failed after retries: %w", lastErr)
 }
 
-// validateQuoteInputs 验证报价输入参数
+// validateQuoteInputs validates quote input parameters
 func (pool *WhirlpoolPool) validateQuoteInputs(inputMint string, inputAmount cosmath.Int) error {
-	// 检查输入金额
+	// Check input amount
 	if inputAmount.IsZero() {
 		return fmt.Errorf("input amount cannot be zero")
 	}
@@ -328,13 +328,13 @@ func (pool *WhirlpoolPool) validateQuoteInputs(inputMint string, inputAmount cos
 		return fmt.Errorf("input amount cannot be negative")
 	}
 
-	// 检查输入金额是否过大 (防止溢出)
-	maxAmount := cosmath.NewIntFromUint64(1e18) // 设置合理的最大值
+	// Check if input amount is too large (prevent overflow)
+	maxAmount := cosmath.NewIntFromUint64(1e18) // Set reasonable maximum value
 	if inputAmount.GT(maxAmount) {
 		return fmt.Errorf("input amount too large: %s > %s", inputAmount.String(), maxAmount.String())
 	}
 
-	// 验证代币 mint 地址格式 - 使用 Solana 标准验证
+	// Validate token mint address format - Use Solana standard validation
 	_, err := solana.PublicKeyFromBase58(inputMint)
 	if err != nil {
 		return fmt.Errorf("invalid mint address format: %s, error: %w", inputMint, err)
@@ -343,24 +343,24 @@ func (pool *WhirlpoolPool) validateQuoteInputs(inputMint string, inputAmount cos
 	return nil
 }
 
-// validatePoolState 验证池状态
+// validatePoolState validates pool state
 func (pool *WhirlpoolPool) validatePoolState() error {
-	// 检查流动性 - 如果为零，跳过这个池但不报错，让路由器选择其他池
+	// Check liquidity - if zero, skip this pool without error, let router choose other pools
 	if pool.Liquidity.IsZero() {
-		return fmt.Errorf("pool has zero liquidity") // 这会让路由器跳过此池
+		return fmt.Errorf("pool has zero liquidity") // This will make router skip this pool
 	}
 
-	// 检查价格 - 价格为零的池无法进行交易
+	// Check price - pools with zero price cannot trade
 	if pool.SqrtPrice.IsZero() {
 		return fmt.Errorf("pool has zero sqrt price")
 	}
 
-	// 检查 tick spacing - 为零的 tick spacing 不合法
+	// Check tick spacing - zero tick spacing is invalid
 	if pool.TickSpacing == 0 {
 		return fmt.Errorf("pool has zero tick spacing")
 	}
 
-	// 检查代币 mint 地址 - 无效地址的池不可用
+	// Check token mint addresses - pools with invalid addresses are unusable
 	if pool.TokenMintA.IsZero() || pool.TokenMintB.IsZero() {
 		return fmt.Errorf("pool has invalid token mint addresses")
 	}
@@ -368,15 +368,15 @@ func (pool *WhirlpoolPool) validatePoolState() error {
 	return nil
 }
 
-// validateQuoteOutput 验证报价输出
+// validateQuoteOutput validates quote output
 func (pool *WhirlpoolPool) validateQuoteOutput(outputAmount cosmath.Int) error {
-	// 检查输出是否为零
+	// Check if output is zero
 	if outputAmount.IsZero() {
 		return fmt.Errorf("computed output amount is zero")
 	}
 
-	// 注意：负数是有效的，表示输出金额（通过 .Neg() 转换为负数）
-	// 所以我们验证绝对值不为零即可
+	// Note: negative numbers are valid, representing output amount (converted to negative via .Neg())
+	// So we just verify absolute value is not zero
 	absoluteAmount := outputAmount.Abs()
 	if absoluteAmount.IsZero() {
 		return fmt.Errorf("computed output amount absolute value is zero: %s", outputAmount.String())
@@ -385,7 +385,7 @@ func (pool *WhirlpoolPool) validateQuoteOutput(outputAmount cosmath.Int) error {
 	return nil
 }
 
-// isTemporaryError 判断是否是临时错误
+// isTemporaryError determines if error is temporary
 func isTemporaryError(err error) bool {
 	errorMsg := strings.ToLower(err.Error())
 	return strings.Contains(errorMsg, "overflow") ||
@@ -394,23 +394,22 @@ func isTemporaryError(err error) bool {
 		strings.Contains(errorMsg, "timeout")
 }
 
-// ComputeWhirlpoolAmountOutFormat - Whirlpool 版本的输出金额计算，参考 CLMM 实现
+// ComputeWhirlpoolAmountOutFormat - Whirlpool version of output amount calculation, referencing CLMM implementation
 func (pool *WhirlpoolPool) ComputeWhirlpoolAmountOutFormat(inputTokenMint string, inputAmount cosmath.Int) (cosmath.Int, error) {
-	// 确定交换方向：A -> B 为 true，B -> A 为 false
+	// Determine swap direction: A -> B is true, B -> A is false
 	zeroForOne := inputTokenMint == pool.TokenMintA.String()
 
-	// 简化版本：暂时不查询外部 tick arrays
-	// 使用当前池状态进行基础计算
+	// Use current pool state for basic calculation
 	firstTickArrayStartIndex := getWhirlpoolTickArrayStartIndexByTick(int64(pool.TickCurrentIndex), int64(pool.TickSpacing))
 
-	// 调用核心交换计算逻辑
+	// Call core swap calculation logic
 	expectedAmountOut, err := pool.whirlpoolSwapCompute(
 		int64(pool.TickCurrentIndex),
 		zeroForOne,
 		inputAmount,
-		cosmath.NewIntFromUint64(uint64(pool.FeeRate)), // 使用池的费率
+		cosmath.NewIntFromUint64(uint64(pool.FeeRate)), // Use pool's fee rate
 		firstTickArrayStartIndex,
-		nil, // 暂时不使用外部 bitmap
+		nil, // Temporarily not using external bitmap
 	)
 	if err != nil {
 		return cosmath.Int{}, fmt.Errorf("failed to compute Whirlpool swap amount: %w", err)
@@ -418,16 +417,16 @@ func (pool *WhirlpoolPool) ComputeWhirlpoolAmountOutFormat(inputTokenMint string
 	return expectedAmountOut, nil
 }
 
-// BuildSwapInstructions 方法 - 构建真实的 Whirlpool SwapV2 指令
+// BuildSwapInstructions method - builds real Whirlpool SwapV2 instruction
 //
-// 这个方法构建完整的 Whirlpool SwapV2 交易指令，包括：
-// 1. 交换方向判断 (A->B 或 B->A)
-// 2. ATA 账户推导和存在性检查
-// 3. Tick Array PDA 地址计算
-// 4. SwapV2 指令参数编码
-// 5. 正确的账户元数据排列
+// This method builds complete Whirlpool SwapV2 transaction instruction, including:
+// 1. Swap direction determination (A->B or B->A)
+// 2. ATA account derivation and existence check
+// 3. Tick Array PDA address calculation
+// 4. SwapV2 instruction parameter encoding
+// 5. Correct account metadata arrangement
 //
-// 返回的指令可以直接用于 Solana 交易执行。
+// Returned instruction can be directly used for Solana transaction execution.
 func (pool *WhirlpoolPool) BuildSwapInstructions(
 	ctx context.Context,
 	solClient *rpc.Client,
@@ -436,20 +435,20 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 	amountIn cosmath.Int,
 	minOutAmountWithDecimals cosmath.Int,
 ) ([]solana.Instruction, error) {
-	// 1. 确定交换方向
+	// 1. Determine swap direction
 	var aToB bool
 
 	if inputMint == pool.TokenMintA.String() {
-		// A -> B 交换
+		// A -> B swap
 		aToB = true
 	} else if inputMint == pool.TokenMintB.String() {
-		// B -> A 交换
+		// B -> A swap
 		aToB = false
 	} else {
 		return nil, fmt.Errorf("input mint %s not found in pool", inputMint)
 	}
 
-	// 2. 获取或创建用户的代币账户 - 固定为 A 和 B，不随交换方向变化
+	// 2. Get or create user's token accounts - fixed as A and B, not changing with swap direction
 	userTokenAccountA, err := getOrCreateTokenAccount(ctx, solClient, userAddr, pool.TokenMintA)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token A account: %w", err)
@@ -460,7 +459,7 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 		return nil, fmt.Errorf("failed to get token B account: %w", err)
 	}
 
-	// 3. 计算价格限制 (设置为极值，实际不限制)
+	// 3. Calculate price limit (set to extreme values, actually no limit)
 	var sqrtPriceLimit uint128.Uint128
 	if aToB {
 		sqrtPriceLimit = uint128.FromBig(MIN_SQRT_PRICE_X64.BigInt())
@@ -468,7 +467,7 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 		sqrtPriceLimit = uint128.FromBig(MAX_SQRT_PRICE_X64.BigInt())
 	}
 
-	// 4. 构建 tick array 地址 (使用真实的 PDA 推导)
+	// 4. Build tick array addresses (using real PDA derivation)
 	tickArray0, tickArray1, tickArray2, err := DeriveMultipleWhirlpoolTickArrayPDAs(
 		pool.PoolId,
 		int64(pool.TickCurrentIndex),
@@ -479,15 +478,15 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 		return nil, fmt.Errorf("failed to derive tick array PDAs: %w", err)
 	}
 
-	// 5. Oracle 地址 (使用正确的 PDA 推导)
+	// 5. Oracle address (using correct PDA derivation)
 	oracleAddr, err := DeriveWhirlpoolOraclePDA(pool.PoolId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive oracle PDA: %w", err)
 	}
 
-	// 6. 构建 SwapV2 指令参数
+	// 6. Build SwapV2 instruction parameters
 	instruction, err := createWhirlpoolSwapV2Instruction(
-		// 指令参数
+		// Instruction parameters
 		amountIn.Uint64(),                 // amount
 		minOutAmountWithDecimals.Uint64(), // otherAmountThreshold
 		sqrtPriceLimit,                    // sqrtPriceLimit
@@ -495,7 +494,7 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 		aToB,                              // aToB
 		nil,                               // remainingAccountsInfo
 
-		// 账户地址 - 固定为 A 和 B 顺序，不随交换方向变化
+		// Account addresses - fixed as A and B order, not changing with swap direction
 		TOKEN_PROGRAM_ID,  // tokenProgramA
 		TOKEN_PROGRAM_ID,  // tokenProgramB
 		MEMO_PROGRAM_ID,   // memoProgram
@@ -503,10 +502,10 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 		pool.PoolId,       // whirlpool
 		pool.TokenMintA,   // tokenMintA
 		pool.TokenMintB,   // tokenMintB
-		userTokenAccountA, // tokenOwnerAccountA (固定为 A)
-		pool.TokenVaultA,  // tokenVaultA (固定为 A)
-		userTokenAccountB, // tokenOwnerAccountB (固定为 B)
-		pool.TokenVaultB,  // tokenVaultB (固定为 B)
+		userTokenAccountA, // tokenOwnerAccountA (fixed as A)
+		pool.TokenVaultA,  // tokenVaultA (fixed as A)
+		userTokenAccountB, // tokenOwnerAccountB (fixed as B)
+		pool.TokenVaultB,  // tokenVaultB (fixed as B)
 		tickArray0,        // tickArray0
 		tickArray1,        // tickArray1
 		tickArray2,        // tickArray2
@@ -519,7 +518,7 @@ func (pool *WhirlpoolPool) BuildSwapInstructions(
 	return []solana.Instruction{instruction}, nil
 }
 
-// whirlpoolSwapCompute - Whirlpool 核心交换计算逻辑 (简化版本，参考 CLMM 实现)
+// whirlpoolSwapCompute - Whirlpool core swap calculation logic
 func (pool *WhirlpoolPool) whirlpoolSwapCompute(
 	currentTick int64,
 	zeroForOne bool,
@@ -528,48 +527,47 @@ func (pool *WhirlpoolPool) whirlpoolSwapCompute(
 	lastSavedTickArrayStartIndex int64,
 	exTickArrayBitmap *WhirlpoolTickArrayBitmapExtensionType,
 ) (cosmath.Int, error) {
-	// 输入验证
+	// Input validation
 	if amountSpecified.IsZero() {
 		return cosmath.Int{}, fmt.Errorf("input amount cannot be zero")
 	}
 
-	// 基础变量初始化
+	// Basic variable initialization
 	baseInput := amountSpecified.IsPositive()
 	sqrtPriceLimitX64 := cosmath.NewInt(0)
 
-	// 初始化计算变量
+	// Initialize calculation variables
 	amountSpecifiedRemaining := amountSpecified
 	amountCalculated := cosmath.NewInt(0)
-	sqrtPriceX64 := cosmath.NewIntFromBigInt(pool.SqrtPrice.Big()) // 注意：Whirlpool 用 SqrtPrice 而不是 SqrtPriceX64
+	sqrtPriceX64 := cosmath.NewIntFromBigInt(pool.SqrtPrice.Big()) // Note: Whirlpool uses SqrtPrice instead of SqrtPriceX64
 	liquidity := cosmath.NewIntFromBigInt(pool.Liquidity.Big())
 
-	// 设置价格限制 - 复用 CLMM 的常量
+	// Set price limits - reuse CLMM constants
 	if zeroForOne {
 		sqrtPriceLimitX64 = MIN_SQRT_PRICE_X64.Add(cosmath.NewInt(1))
 	} else {
 		sqrtPriceLimitX64 = MAX_SQRT_PRICE_X64.Sub(cosmath.NewInt(1))
 	}
 
-	// 简化版本：不使用复杂的 tick array 遍历，直接基于当前价格计算
-	// 实际生产环境需要实现完整的 tick 遍历逻辑
+	// Production environment requires complete tick traversal logic implementation
 
-	// 计算目标价格 (简化：向价格限制方向移动一小步)
+	// Calculate target price (simplified: move a small step towards price limit direction)
 	targetPrice := sqrtPriceX64
 	if zeroForOne {
-		// A -> B: 价格下降
-		targetPrice = sqrtPriceX64.Mul(cosmath.NewInt(995)).Quo(cosmath.NewInt(1000)) // 降低 0.5%
+		// A -> B: price decreases
+		targetPrice = sqrtPriceX64.Mul(cosmath.NewInt(995)).Quo(cosmath.NewInt(1000)) // Decrease 0.5%
 		if targetPrice.LT(sqrtPriceLimitX64) {
 			targetPrice = sqrtPriceLimitX64
 		}
 	} else {
-		// B -> A: 价格上升
-		targetPrice = sqrtPriceX64.Mul(cosmath.NewInt(1005)).Quo(cosmath.NewInt(1000)) // 增加 0.5%
+		// B -> A: price increases
+		targetPrice = sqrtPriceX64.Mul(cosmath.NewInt(1005)).Quo(cosmath.NewInt(1000)) // Increase 0.5%
 		if targetPrice.GT(sqrtPriceLimitX64) {
 			targetPrice = sqrtPriceLimitX64
 		}
 	}
 
-	// 调用简化的单步计算
+	// Call simplified single-step calculation
 	newSqrtPrice, amountIn, amountOut, feeAmount, err := pool.whirlpoolSwapStepCompute(
 		sqrtPriceX64,
 		targetPrice,
@@ -582,16 +580,16 @@ func (pool *WhirlpoolPool) whirlpoolSwapCompute(
 		return cosmath.Int{}, fmt.Errorf("swap step compute failed: %w", err)
 	}
 
-	// 更新计算结果
+	// Update calculation results
 	if baseInput {
-		// 精确输入模式
-		amountCalculated = amountOut.Neg() // 返回负数表示输出
+		// Exact input mode
+		amountCalculated = amountOut.Neg() // Return negative number representing output
 	} else {
-		// 精确输出模式
+		// Exact output mode
 		amountCalculated = amountIn.Add(feeAmount)
 	}
 
-	// 验证结果合理性
+	// Validate result reasonableness
 	if amountCalculated.IsZero() {
 		return cosmath.Int{}, fmt.Errorf("calculated amount is zero, input: %s, sqrtPrice: %s->%s",
 			amountSpecified.String(), sqrtPriceX64.String(), newSqrtPrice.String())
@@ -600,8 +598,8 @@ func (pool *WhirlpoolPool) whirlpoolSwapCompute(
 	return amountCalculated, nil
 }
 
-// whirlpoolSwapStepCompute - Whirlpool 精确 CLMM 计算 (基于 Raydium CLMM 算法)
-// 采用与 Raydium CLMM 相同的精确数学公式，确保计算准确性
+// whirlpoolSwapStepCompute - Whirlpool precise CLMM calculation (based on Raydium CLMM algorithm)
+// Uses same precise mathematical formulas as Raydium CLMM to ensure calculation accuracy
 func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 	sqrtPriceCurrent cosmath.Int,
 	sqrtPriceTarget cosmath.Int,
@@ -611,7 +609,7 @@ func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 	zeroForOne bool,
 ) (sqrtPriceNext cosmath.Int, amountIn cosmath.Int, amountOut cosmath.Int, feeAmount cosmath.Int, err error) {
 
-	// 基础验证
+	// Basic validation
 	if liquidity.IsZero() {
 		return cosmath.Int{}, cosmath.Int{}, cosmath.Int{}, cosmath.Int{}, fmt.Errorf("liquidity is zero")
 	}
@@ -621,8 +619,8 @@ func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 		return sqrtPriceCurrent, cosmath.ZeroInt(), cosmath.ZeroInt(), cosmath.ZeroInt(), nil
 	}
 
-	// 调用精确的 CLMM swap step 计算
-	// 这个函数采用与 Raydium 相同的算法，确保数学准确性
+	// Call precise CLMM swap step calculation
+	// This function uses same algorithm as Raydium to ensure mathematical accuracy
 	return whirlpoolSwapStepComputePrecise(
 		sqrtPriceCurrent.BigInt(),
 		sqrtPriceTarget.BigInt(),
@@ -633,8 +631,8 @@ func (pool *WhirlpoolPool) whirlpoolSwapStepCompute(
 	)
 }
 
-// whirlpoolSwapStepComputePrecise - 精确的 CLMM swap step 计算
-// 基于 Raydium CLMM 的 swapStepCompute 函数，针对 Whirlpool 进行适配
+// whirlpoolSwapStepComputePrecise - precise CLMM swap step calculation
+// Based on Raydium CLMM's swapStepCompute function, adapted for Whirlpool
 func whirlpoolSwapStepComputePrecise(
 	sqrtPriceX64Current *big.Int,
 	sqrtPriceX64Target *big.Int,
@@ -644,7 +642,7 @@ func whirlpoolSwapStepComputePrecise(
 	zeroForOne bool,
 ) (cosmath.Int, cosmath.Int, cosmath.Int, cosmath.Int, error) {
 
-	// 定义 SwapStep 结构来追踪计算状态
+	// Define SwapStep structure to track calculation state
 	swapStep := &WhirlpoolSwapStep{
 		SqrtPriceX64Next: new(big.Int),
 		AmountIn:         new(big.Int),
@@ -655,12 +653,12 @@ func whirlpoolSwapStepComputePrecise(
 	zero := new(big.Int)
 	baseInput := amountRemaining.Cmp(zero) >= 0
 
-	// Step 1: 计算费用率相关常量
-	// FEE_RATE_DENOMINATOR = 1,000,000 (Whirlpool 使用百万分之一作为费率单位)
+	// Step 1: Calculate fee rate related constants
+	// FEE_RATE_DENOMINATOR = 1,000,000 (Whirlpool uses parts per million as fee rate unit)
 	FEE_RATE_DENOMINATOR := cosmath.NewInt(1000000)
 
 	if baseInput {
-		// 精确输入模式：先扣除费用，再计算交换
+		// Exact input mode: deduct fees first, then calculate swap
 		feeRateBig := cosmath.NewInt(int64(feeRate))
 		tmp := FEE_RATE_DENOMINATOR.Sub(feeRateBig)
 		amountRemainingSubtractFee := whirlpoolMulDivFloor(
@@ -669,7 +667,7 @@ func whirlpoolSwapStepComputePrecise(
 			FEE_RATE_DENOMINATOR,
 		)
 
-		// 计算在当前价格区间内可以交换的最大金额
+		// Calculate maximum amount that can be swapped within current price range
 		if zeroForOne {
 			// Token A -> Token B
 			swapStep.AmountIn = whirlpoolGetTokenAmountAFromLiquidity(
@@ -680,12 +678,12 @@ func whirlpoolSwapStepComputePrecise(
 				sqrtPriceX64Current, sqrtPriceX64Target, liquidity, true)
 		}
 
-		// 判断是否会到达目标价格
+		// Determine if target price will be reached
 		if amountRemainingSubtractFee.GTE(cosmath.NewIntFromBigInt(swapStep.AmountIn)) {
-			// 输入足够大，会到达目标价格
+			// Input is large enough, will reach target price
 			swapStep.SqrtPriceX64Next.Set(sqrtPriceX64Target)
 		} else {
-			// 输入不足，计算新的价格
+			// Input insufficient, calculate new price
 			swapStep.SqrtPriceX64Next = whirlpoolGetNextSqrtPriceX64FromInput(
 				sqrtPriceX64Current,
 				liquidity,
@@ -694,7 +692,7 @@ func whirlpoolSwapStepComputePrecise(
 			)
 		}
 	} else {
-		// 精确输出模式：直接计算所需输入
+		// Exact output mode: directly calculate required input
 		if zeroForOne {
 			swapStep.AmountOut = whirlpoolGetTokenAmountBFromLiquidity(
 				sqrtPriceX64Target, sqrtPriceX64Current, liquidity, false)
@@ -718,7 +716,7 @@ func whirlpoolSwapStepComputePrecise(
 		}
 	}
 
-	// Step 2: 重新计算精确的输入输出金额
+	// Step 2: Recalculate precise input and output amounts
 	reachTargetPrice := swapStep.SqrtPriceX64Next.Cmp(sqrtPriceX64Target) == 0
 
 	if zeroForOne {
@@ -759,7 +757,7 @@ func whirlpoolSwapStepComputePrecise(
 		}
 	}
 
-	// Step 3: 计算费用
+	// Step 3: Calculate fees
 	if baseInput && swapStep.SqrtPriceX64Next.Cmp(sqrtPriceX64Target) != 0 {
 		swapStep.FeeAmount = new(big.Int).Sub(amountRemaining, swapStep.AmountIn)
 	} else {
@@ -772,11 +770,11 @@ func whirlpoolSwapStepComputePrecise(
 		).BigInt()
 	}
 
-	// 应用适中的安全边际 (10% 而不是 80%)
-	safetyMargin := cosmath.NewInt(90) // 保留 90% 的计算结果
+	// Apply moderate safety margin (10% instead of 80%)
+	safetyMargin := cosmath.NewInt(90) // Keep 90% of calculation result
 	adjustedAmountOut := cosmath.NewIntFromBigInt(swapStep.AmountOut).Mul(safetyMargin).Quo(cosmath.NewInt(100))
 
-	// 确保最小输出
+	// Ensure minimum output
 	if adjustedAmountOut.IsZero() && swapStep.AmountOut.Cmp(zero) > 0 {
 		adjustedAmountOut = cosmath.NewInt(1)
 	}
@@ -787,33 +785,33 @@ func whirlpoolSwapStepComputePrecise(
 		cosmath.NewIntFromBigInt(swapStep.FeeAmount), nil
 }
 
-// getOrCreateTokenAccount 获取或创建用户的代币账户
+// getOrCreateTokenAccount gets or creates user's token account
 func getOrCreateTokenAccount(ctx context.Context, solClient *rpc.Client, userAddr solana.PublicKey, tokenMint solana.PublicKey) (solana.PublicKey, error) {
-	// 1. 推导 ATA 地址
+	// 1. Derive ATA address
 	ata, _, err := solana.FindAssociatedTokenAddress(userAddr, tokenMint)
 	if err != nil {
 		return solana.PublicKey{}, fmt.Errorf("failed to find associated token address: %w", err)
 	}
 
-	// 2. 检查 ATA 账户是否存在
+	// 2. Check if ATA account exists
 	accountExists, err := checkAccountExists(ctx, solClient, ata)
 	if err != nil {
-		// 如果 RPC 查询失败，继续使用 ATA 地址，让交易自然失败
-		// 这样可以避免阻塞正常流程
+		// If RPC query fails, continue using ATA address, let transaction fail naturally
+		// This avoids blocking normal flow
 		return ata, nil
 	}
 
 	if !accountExists {
-		// ATA 不存在，但我们仍然返回地址
-		// 在实际应用中，调用方需要决定是否添加创建 ATA 的指令
-		// 对于主流代币（如 SOL, USDC），用户通常已经有 ATA
+		// ATA doesn't exist, but we still return the address
+		// In practical applications, caller needs to decide whether to add ATA creation instruction
+		// For mainstream tokens (like SOL, USDC), users usually already have ATA
 		return ata, nil
 	}
 
 	return ata, nil
 }
 
-// checkAccountExists 检查账户是否存在 (带重试机制)
+// checkAccountExists checks if account exists (with retry mechanism)
 func checkAccountExists(ctx context.Context, solClient *rpc.Client, accountAddr solana.PublicKey) (bool, error) {
 	// 实现简单的重试机制，应对 RPC 限流
 	maxRetries := 3

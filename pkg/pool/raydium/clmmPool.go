@@ -284,11 +284,11 @@ func (l *CLMMPool) Offset(field string) uint64 {
 }
 
 func (l *CLMMPool) CurrentPrice() float64 {
-	// 转换为 float64
+	// Convert to float64
 	sqrtPrice, _ := l.SqrtPriceX64.Big().Float64()
-	// Q64.64 格式转换
+	// Q64.64 format conversion
 	sqrtPrice = sqrtPrice / math.Pow(2, 64)
-	// 计算实际价格
+	// Calculate actual price
 	price := sqrtPrice * sqrtPrice
 	return price
 }
@@ -310,10 +310,10 @@ func (p *CLMMPool) BuildSwapInstructions(
 	minOutAmountWithDecimals cosmath.Int,
 ) ([]solana.Instruction, error) {
 
-	// 初始化指令数组和签名者
+	// Initialize instruction array and signers
 	instrs := []solana.Instruction{}
 
-	// 设置用户代币账户 - 这是关键修复！
+	// Set user token accounts
 	var err error
 	userInputMintKey, err := solana.PublicKeyFromBase58(inputMint)
 	if err != nil {
@@ -323,7 +323,7 @@ func (p *CLMMPool) BuildSwapInstructions(
 	var outputMint solana.PublicKey
 	if inputMint == p.TokenMint0.String() {
 		outputMint = p.TokenMint1
-		// 找到用户的 ATA 账户
+		// Find user's ATA account
 		p.UserBaseAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, userInputMintKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find user input token account: %w", err)
@@ -334,7 +334,7 @@ func (p *CLMMPool) BuildSwapInstructions(
 		}
 	} else {
 		outputMint = p.TokenMint0
-		// 找到用户的 ATA 账户
+		// Find user's ATA account
 		p.UserQuoteAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, userInputMintKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find user input token account: %w", err)
@@ -345,7 +345,7 @@ func (p *CLMMPool) BuildSwapInstructions(
 		}
 	}
 
-	// 检查并创建输出 ATA 账户（如果不存在）
+	// Check and create output ATA account (if not exists)
 	var outputATAAccount solana.PublicKey
 	if inputMint == p.TokenMint0.String() {
 		outputATAAccount = p.UserQuoteAccount
@@ -355,14 +355,14 @@ func (p *CLMMPool) BuildSwapInstructions(
 
 	outputATAInfo, err := solClient.GetAccountInfo(ctx, outputATAAccount)
 	if err != nil || outputATAInfo.Value == nil || outputATAInfo.Value.Owner.IsZero() {
-		// ATA 不存在，需要创建它
-		// 这里暂时跳过创建 ATA 的指令，让用户手动创建
-		// 或者可以使用 solana CLI: solana spl-token create-account <mint>
+		// ATA doesn't exist, need to create it
+		// Temporarily skip creating ATA instruction, let user create manually
+		// Or can use solana CLI: solana spl-token create-account <mint>
 		log.Printf("Warning: Output ATA account %s does not exist, please create it manually", outputATAAccount.String())
 	}
 
-	// 移除 Approve 指令，CLMM 可能使用不同的授权机制
-	// 或者根本不需要预授权
+	// Remove Approve instruction, CLMM may use different authorization mechanism
+	// Or may not need pre-authorization at all
 
 	var inputValueMint solana.PublicKey
 	var outputValueMint solana.PublicKey

@@ -18,65 +18,65 @@ var (
 	MEMO_PROGRAM_ID       = solana.MustPublicKeyFromBase58("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr")
 )
 
-// Tick Array Configuration - 参考 Orca Whirlpool 规范
+// Tick Array Configuration - Based on Orca Whirlpool specification
 const (
-	TICK_ARRAY_SIZE                 = 88  // Whirlpool 使用 88 而不是 CLMM 的 60
-	TickSize                        = 168 // Tick 大小保持相同
-	TICK_ARRAY_BITMAP_SIZE          = 512 // 位图大小保持相同
+	TICK_ARRAY_SIZE                 = 88  // Whirlpool uses 88 instead of CLMM's 60
+	TickSize                        = 168 // Tick size remains the same
+	TICK_ARRAY_BITMAP_SIZE          = 512 // Bitmap size remains the same
 	MAX_TICK                        = 443636
 	MIN_TICK                        = -443636
 	EXTENSION_TICKARRAY_BITMAP_SIZE = 14
 	U64Resolution                   = 64
 )
 
-// Price Constants - 复用 CLMM 的价格限制常量
+// Price Constants - Reuse CLMM price limit constants
 var (
 	MIN_SQRT_PRICE_X64    = math.NewIntFromBigInt(big.NewInt(4295048016))
 	MAX_SQRT_PRICE_X64, _ = math.NewIntFromString("79226673521066979257578248091")
 	FEE_RATE_DENOMINATOR  = math.NewInt(int64(1000000))
 )
 
-// Liquidity Constants - Whirlpool 可能有不同的费用结构
+// Liquidity Constants - Whirlpool may have different fee structure
 var (
 	LIQUIDITY_FEES_NUMERATOR   = math.NewInt(25)
 	LIQUIDITY_FEES_DENOMINATOR = math.NewInt(10000)
 )
 
-// Seeds and Discriminators - Whirlpool 特有的种子和判别器
+// Seeds and Discriminators - Whirlpool-specific seeds and discriminators
 var (
-	// Whirlpool 账户种子
+	// Whirlpool account seed
 	WHIRLPOOL_SEED = "whirlpool"
 
-	// Whirlpool Swap 指令判别器 (从 IDL 中获取)
+	// Whirlpool Swap instruction discriminator (from IDL)
 	SwapDiscriminator = []byte{248, 198, 158, 145, 225, 117, 135, 200}
-	// Whirlpool Swap V2 指令判别器 (从 IDL 中获取)
-	SwapV2Discriminator = []byte{43, 4, 237, 11, 26, 201, 30, 98} // 需要从实际 IDL 验证
+	// Whirlpool Swap V2 instruction discriminator (from IDL)
+	SwapV2Discriminator = []byte{43, 4, 237, 11, 26, 201, 30, 98} // Need to verify from actual IDL
 
-	// 其他常用种子
+	// Other common seeds
 	TICK_ARRAY_SEED = "tick_array"
 	POSITION_SEED   = "position"
 )
 
-// Whirlpool 特有常量
+// Whirlpool-specific constants
 const (
-	// Whirlpool 账户数据大小 (653 字节包含 discriminator)
+	// Whirlpool account data size (653 bytes including discriminator)
 	WHIRLPOOL_SIZE = 653
 
-	// Whirlpool 支持的 tick spacing 列表
-	TICK_SPACING_STABLE   = 1   // 稳定币对
-	TICK_SPACING_STANDARD = 64  // 标准代币对
-	TICK_SPACING_VOLATILE = 128 // 波动性代币对
+	// Whirlpool supported tick spacing list
+	TICK_SPACING_STABLE   = 1   // Stable coin pairs
+	TICK_SPACING_STANDARD = 64  // Standard token pairs
+	TICK_SPACING_VOLATILE = 128 // Volatile token pairs
 )
 
-// 数学计算常量
+// Mathematical calculation constants
 var (
-	// Q64 格式常量 (2^64)
+	// Q64 format constant (2^64)
 	Q64 = math.NewIntFromBigInt(new(big.Int).Lsh(big.NewInt(1), 64))
 
-	// Q128 格式常量 (2^128)
+	// Q128 format constant (2^128)
 	Q128 = math.NewIntFromBigInt(new(big.Int).Lsh(big.NewInt(1), 128))
 
-	// 零值常量
+	// Zero value constants
 	ZERO_INT = math.NewInt(0)
 	ONE_INT  = math.NewInt(1)
 )

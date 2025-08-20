@@ -11,48 +11,48 @@ import (
 	"github.com/yimingWOW/solroute/pkg/sol"
 )
 
-// OrcaWhirlpoolProtocol 实现 Protocol 接口，提供 Orca Whirlpool V2 协议支持
+// OrcaWhirlpoolProtocol implements Protocol interface, providing Orca Whirlpool V2 protocol support
 //
-// Orca Whirlpool 是一个基于集中流动性的自动化做市商 (CLMM) 协议，
-// 支持资本效率优化的流动性提供和交易。
+// Orca Whirlpool is a concentrated liquidity-based automated market maker (CLMM) protocol,
+// supporting capital efficiency optimized liquidity provision and trading.
 //
-// 程序 ID: whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc
+// Program ID: whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc
 //
-// 主要特性:
-// - 集中流动性管理
-// - 多级费用结构
-// - Tick-based 价格机制
-// - SwapV2 指令支持
+// Main features:
+// - Concentrated liquidity management
+// - Multi-tier fee structure
+// - Tick-based price mechanism
+// - SwapV2 instruction support
 type OrcaWhirlpoolProtocol struct {
 	SolClient *sol.Client
 }
 
-// NewOrcaWhirlpool 创建新的 Orca Whirlpool 协议实例
+// NewOrcaWhirlpool creates a new Orca Whirlpool protocol instance
 //
-// 参数:
-//   - solClient: Solana 客户端，用于与区块链交互
+// Parameters:
+//   - solClient: Solana client for blockchain interaction
 //
-// 返回:
-//   - *OrcaWhirlpoolProtocol: 协议实例
+// Returns:
+//   - *OrcaWhirlpoolProtocol: protocol instance
 func NewOrcaWhirlpool(solClient *sol.Client) *OrcaWhirlpoolProtocol {
 	return &OrcaWhirlpoolProtocol{
 		SolClient: solClient,
 	}
 }
 
-// FetchPoolsByPair 根据代币对获取 Whirlpool 池列表
-// 参考 raydiumClmm.go 的实现，调整字段名映射
+// FetchPoolsByPair gets Whirlpool pool list by token pair
+// Reference raydiumClmm.go implementation, adjust field name mapping
 func (p *OrcaWhirlpoolProtocol) FetchPoolsByPair(ctx context.Context, baseMint string, quoteMint string) ([]pkg.Pool, error) {
 	accounts := make([]*rpc.KeyedAccount, 0)
 
-	// 查询 baseMint -> quoteMint 的池
+	// Query pools for baseMint -> quoteMint
 	programAccounts, err := p.getWhirlpoolAccountsByTokenPair(ctx, baseMint, quoteMint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch pools with base token %s: %w", baseMint, err)
 	}
 	accounts = append(accounts, programAccounts...)
 
-	// 查询 quoteMint -> baseMint 的池
+	// Query pools for quoteMint -> baseMint
 	programAccounts, err = p.getWhirlpoolAccountsByTokenPair(ctx, quoteMint, baseMint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch pools with base token %s: %w", quoteMint, err)
@@ -68,15 +68,15 @@ func (p *OrcaWhirlpoolProtocol) FetchPoolsByPair(ctx context.Context, baseMint s
 		}
 		layout.PoolId = v.Pubkey
 
-		// TODO: 如果需要获取其他配置信息（如费率等），在此处添加
+		// TODO: Add here if need to get other configuration info (like fee rates)
 
 		res = append(res, layout)
 	}
 	return res, nil
 }
 
-// getWhirlpoolAccountsByTokenPair 查询指定代币对的 Whirlpool 账户
-// 参考 raydiumClmm.go 的 getCLMMPoolAccountsByTokenPair 方法
+// getWhirlpoolAccountsByTokenPair queries Whirlpool accounts for specified token pair
+// Reference getCLMMPoolAccountsByTokenPair method from raydiumClmm.go
 func (p *OrcaWhirlpoolProtocol) getWhirlpoolAccountsByTokenPair(ctx context.Context, baseMint string, quoteMint string) (rpc.GetProgramAccountsResult, error) {
 	baseKey, err := solana.PublicKeyFromBase58(baseMint)
 	if err != nil {
@@ -87,16 +87,16 @@ func (p *OrcaWhirlpoolProtocol) getWhirlpoolAccountsByTokenPair(ctx context.Cont
 		return nil, fmt.Errorf("invalid quote mint address: %w", err)
 	}
 
-	// Whirlpool account discriminator (从 external/orca/whirlpool/generated/discriminators.go)
+	// Whirlpool account discriminator (from external/orca/whirlpool/generated/discriminators.go)
 	whirlpoolDiscriminator := [8]byte{63, 149, 209, 12, 225, 128, 99, 9}
 
 	var knownPoolLayout orca.WhirlpoolPool
 	result, err := p.SolClient.RpcClient.GetProgramAccountsWithOpts(ctx, orca.ORCA_WHIRLPOOL_PROGRAM_ID, &rpc.GetProgramAccountsOpts{
 		Filters: []rpc.RPCFilter{
 			{
-				// 首先过滤 Whirlpool discriminator（确保只查询 Whirlpool 账户）
+				// First filter Whirlpool discriminator (ensure only querying Whirlpool accounts)
 				Memcmp: &rpc.RPCFilterMemcmp{
-					Offset: 0, // Discriminator 在账户数据开头
+					Offset: 0, // Discriminator at beginning of account data
 					Bytes:  whirlpoolDiscriminator[:],
 				},
 			},
@@ -105,13 +105,13 @@ func (p *OrcaWhirlpoolProtocol) getWhirlpoolAccountsByTokenPair(ctx context.Cont
 			},
 			{
 				Memcmp: &rpc.RPCFilterMemcmp{
-					Offset: knownPoolLayout.Offset("TokenMintA"), // 注意：CLMM 用 TokenMint0
+					Offset: knownPoolLayout.Offset("TokenMintA"), // Note: CLMM uses TokenMint0
 					Bytes:  baseKey.Bytes(),
 				},
 			},
 			{
 				Memcmp: &rpc.RPCFilterMemcmp{
-					Offset: knownPoolLayout.Offset("TokenMintB"), // 注意：CLMM 用 TokenMint1
+					Offset: knownPoolLayout.Offset("TokenMintB"), // Note: CLMM uses TokenMint1
 					Bytes:  quoteKey.Bytes(),
 				},
 			},
@@ -124,8 +124,8 @@ func (p *OrcaWhirlpoolProtocol) getWhirlpoolAccountsByTokenPair(ctx context.Cont
 	return result, nil
 }
 
-// FetchPoolByID 根据池 ID 获取单个 Whirlpool 池
-// 参考 raydiumClmm.go 的实现
+// FetchPoolByID gets single Whirlpool pool by pool ID
+// Reference raydiumClmm.go implementation
 func (p *OrcaWhirlpoolProtocol) FetchPoolByID(ctx context.Context, poolId string) (pkg.Pool, error) {
 	poolIdKey, err := solana.PublicKeyFromBase58(poolId)
 	if err != nil {

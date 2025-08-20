@@ -10,14 +10,14 @@ import (
 	"lukechampine.com/uint128"
 )
 
-// WhirlpoolTickArrayBitmapExtensionType - Whirlpool 版本的 tick array bitmap 扩展
+// WhirlpoolTickArrayBitmapExtensionType - Whirlpool version of tick array bitmap extension
 type WhirlpoolTickArrayBitmapExtensionType struct {
 	PoolId                  solana.PublicKey
 	PositiveTickArrayBitmap [][]uint64
 	NegativeTickArrayBitmap [][]uint64
 }
 
-// WhirlpoolTickArray - Whirlpool 版本的 tick array，参考 CLMM 但使用 Whirlpool 特有的大小
+// WhirlpoolTickArray - Whirlpool version of tick array, based on CLMM but uses Whirlpool-specific size
 type WhirlpoolTickArray struct {
 	_                    [8]byte              `bin:"skip"`         // padding
 	PoolId               solana.PublicKey     `bin:"fixed"`        // 32 bytes
@@ -27,7 +27,7 @@ type WhirlpoolTickArray struct {
 	_                    [115]byte            `bin:"skip"` // padding
 }
 
-// WhirlpoolTickState - Whirlpool 版本的 tick state，结构类似 CLMM 但字段可能有差异
+// WhirlpoolTickState - Whirlpool version of tick state, similar structure to CLMM but fields may differ
 type WhirlpoolTickState struct {
 	Tick                    int32              `bin:"le"`   // 4 bytes
 	LiquidityNet            int64              `bin:"le"`   // 8 bytes
@@ -39,7 +39,7 @@ type WhirlpoolTickState struct {
 	_                       [52]byte           `bin:"skip"` // padding
 }
 
-// Decode 解析 Whirlpool tick array 数据
+// Decode parses Whirlpool tick array data
 func (t *WhirlpoolTickArray) Decode(data []byte) error {
 	decoder := bin.NewBinDecoder(data)
 
@@ -80,36 +80,36 @@ func (t *WhirlpoolTickArray) Decode(data []byte) error {
 	return nil
 }
 
-// Whirlpool 版本的工具函数 - 复制自 CLMM 实现并调整参数
+// Whirlpool version utility functions - Copied from CLMM implementation with adjusted parameters
 
-// getTickCount 返回 tick array 中 tick 的数量 - Whirlpool 使用 88 而不是 60
+// getTickCount returns the number of ticks in tick array - Whirlpool uses 88 instead of 60
 func getWhirlpoolTickCount(tickSpacing int64) int64 {
 	return tickSpacing * TICK_ARRAY_SIZE // TICK_ARRAY_SIZE = 88 for Whirlpool
 }
 
-// getTickArrayStartIndex 获取 tick array 的起始索引
+// getTickArrayStartIndex gets the start index of tick array
 func getWhirlpoolTickArrayStartIndex(tick int64, tickSpacing int64) int64 {
 	return tick - tick%getWhirlpoolTickCount(tickSpacing)
 }
 
-// GetWhirlpoolTickArrayStartIndexByTick 根据 tick 获取 tick array 起始索引（导出版本）
+// GetWhirlpoolTickArrayStartIndexByTick gets tick array start index by tick (exported version)
 func GetWhirlpoolTickArrayStartIndexByTick(tickIndex int64, tickSpacing int64) int64 {
 	return getWhirlpoolTickArrayStartIndexByTick(tickIndex, tickSpacing)
 }
 
-// getWhirlpoolTickArrayStartIndexByTick 根据 tick 获取 tick array 起始索引
+// getWhirlpoolTickArrayStartIndexByTick gets tick array start index by tick
 func getWhirlpoolTickArrayStartIndexByTick(tickIndex int64, tickSpacing int64) int64 {
 	ticksInArray := getWhirlpoolTickCount(tickSpacing)
 	start := math.Floor(float64(tickIndex) / float64(ticksInArray))
 	return int64(start * float64(ticksInArray))
 }
 
-// maxTickInTickarrayBitmap Whirlpool 版本的最大 tick
+// maxTickInTickarrayBitmap Whirlpool version of maximum tick
 func maxWhirlpoolTickInTickarrayBitmap(tickSpacing int64) int64 {
 	return TICK_ARRAY_BITMAP_SIZE * getWhirlpoolTickCount(tickSpacing)
 }
 
-// TickArrayOffsetInBitmap 计算 tick array 在 bitmap 中的偏移
+// TickArrayOffsetInBitmap calculates tick array offset in bitmap
 func WhirlpoolTickArrayOffsetInBitmap(tickArrayStartIndex int64, tickSpacing int64) int64 {
 	m := abs(tickArrayStartIndex)
 	tickArrayOffsetInBitmap := m / getWhirlpoolTickCount(tickSpacing)
@@ -121,7 +121,7 @@ func WhirlpoolTickArrayOffsetInBitmap(tickArrayStartIndex int64, tickSpacing int
 	return tickArrayOffsetInBitmap
 }
 
-// abs 返回整数的绝对值
+// abs returns the absolute value of integer
 func abs(x int64) int64 {
 	if x < 0 {
 		return -x
@@ -129,15 +129,15 @@ func abs(x int64) int64 {
 	return x
 }
 
-// getFirstInitializedWhirlpoolTickArray - Whirlpool 版本的第一个初始化 tick array 获取
+// getFirstInitializedWhirlpoolTickArray - Whirlpool version of getting first initialized tick array
 func (pool *WhirlpoolPool) getFirstInitializedWhirlpoolTickArray(zeroForOne bool, exTickArrayBitmap *WhirlpoolTickArrayBitmapExtensionType) (int64, solana.PublicKey, error) {
-	// 1. 计算当前 tick 所在的 tick array 起始索引
+	// 1. Calculate start index of tick array containing current tick
 	startIndex := getWhirlpoolTickArrayStartIndexByTick(int64(pool.TickCurrentIndex), int64(pool.TickSpacing))
 
-	// 2. 为简化实现，暂时返回计算出的起始索引
-	// TODO: 实现完整的 bitmap 查找逻辑，参考 CLMM 的实现
+	// 2. For simplified implementation, temporarily return calculated start index
+	// TODO: Implement complete bitmap lookup logic, refer to CLMM implementation
 
-	// 3. 构造 tick array 地址（使用真实的 PDA 推导）
+	// 3. Construct tick array address (using real PDA derivation)
 	tickArrayPDA, err := DeriveWhirlpoolTickArrayPDA(pool.PoolId, startIndex)
 	if err != nil {
 		return 0, solana.PublicKey{}, fmt.Errorf("failed to derive tick array PDA: %w", err)
@@ -146,7 +146,7 @@ func (pool *WhirlpoolPool) getFirstInitializedWhirlpoolTickArray(zeroForOne bool
 	return startIndex, tickArrayPDA, nil
 }
 
-// isOverflowDefaultWhirlpoolTickarrayBitmap 检查是否超出默认 bitmap 范围
+// isOverflowDefaultWhirlpoolTickarrayBitmap checks if exceeding default bitmap range
 func isOverflowDefaultWhirlpoolTickarrayBitmap(tickSpacing int64, tickarrayStartIndexs []int64) bool {
 	tickRange := whirlpoolTickRange(tickSpacing)
 	maxTickBoundary := tickRange.maxTickBoundary
@@ -160,7 +160,7 @@ func isOverflowDefaultWhirlpoolTickarrayBitmap(tickSpacing int64, tickarrayStart
 	return false
 }
 
-// whirlpoolTickRange 获取 Whirlpool tick 范围
+// whirlpoolTickRange gets Whirlpool tick range
 func whirlpoolTickRange(tickSpacing int64) struct {
 	maxTickBoundary int64
 	minTickBoundary int64
@@ -183,13 +183,13 @@ func whirlpoolTickRange(tickSpacing int64) struct {
 	}
 }
 
-// Whirlpool 版本的 bitmap 操作函数 - 复用 CLMM 的逻辑
+// Whirlpool version bitmap operation functions - Reuse CLMM logic
 
-// MergeWhirlpoolTickArrayBitmap 合并 tick array bitmap
+// MergeWhirlpoolTickArrayBitmap merges tick array bitmap
 func MergeWhirlpoolTickArrayBitmap(bns []uint64) *big.Int {
 	result := new(big.Int)
 
-	// 遍历数组
+	// Iterate through array
 	for i, bn := range bns {
 		// Convert uint64 to big.Int
 		bnBig := new(big.Int).SetUint64(bn)
@@ -204,12 +204,12 @@ func MergeWhirlpoolTickArrayBitmap(bns []uint64) *big.Int {
 	return result
 }
 
-// IsZero 检查 big.Int 是否为零
+// IsZero checks if big.Int is zero
 func IsZero(bitNum int, data *big.Int) bool {
 	return data.Sign() == 0
 }
 
-// TrailingZeros 计算尾随零的数量
+// TrailingZeros calculates the number of trailing zeros
 func TrailingZeros(bitNum int, data *big.Int) *int {
 	if IsZero(bitNum, data) {
 		return nil
@@ -228,20 +228,20 @@ func TrailingZeros(bitNum int, data *big.Int) *int {
 	return &count
 }
 
-// LeadingZeros 计算前导零的数量
+// LeadingZeros calculates the number of leading zeros
 func LeadingZeros(bitNum int, data *big.Int) *int {
 	if IsZero(bitNum, data) {
 		return nil
 	}
 
-	// 获取最高位的位置
+	// Get position of highest bit
 	bitLen := data.BitLen()
 
 	if bitLen == 0 {
 		return nil
 	}
 
-	// 计算前导零
+	// Calculate leading zeros
 	leadingZeros := bitNum - bitLen
 	if leadingZeros < 0 {
 		leadingZeros = 0
@@ -250,32 +250,32 @@ func LeadingZeros(bitNum int, data *big.Int) *int {
 	return &leadingZeros
 }
 
-// MostSignificantBit 获取最高有效位
+// MostSignificantBit gets the most significant bit
 func MostSignificantBit(bitNum int, data *big.Int) *int {
-	// 检查是否为零
+	// Check if zero
 	if IsZero(bitNum, data) {
 		return nil
 	}
-	// 返回前导零的数量
+	// Return number of leading zeros
 	return LeadingZeros(bitNum, data)
 }
 
-// DeriveWhirlpoolTickArrayPDA 推导 Whirlpool tick array 的 PDA 地址
-// 基于 Whirlpool 源码实现：种子 = ["tick_array", whirlpool_pubkey, start_tick_index.to_string()]
+// DeriveWhirlpoolTickArrayPDA derives PDA address for Whirlpool tick array
+// Based on Whirlpool source code implementation: seeds = ["tick_array", whirlpool_pubkey, start_tick_index.to_string()]
 func DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey solana.PublicKey, startTickIndex int64) (solana.PublicKey, error) {
-	// 将 start_tick_index 转换为字符串字节数组，与 Whirlpool 源码保持一致
-	// 源码：start_tick_index.to_string().as_bytes()
+	// Convert start_tick_index to string byte array, consistent with Whirlpool source code
+	// Source code: start_tick_index.to_string().as_bytes()
 	startTickIndexStr := fmt.Sprintf("%d", startTickIndex)
 	startTickIndexBytes := []byte(startTickIndexStr)
 
-	// 构建种子
+	// Build seeds
 	seeds := [][]byte{
 		[]byte(TICK_ARRAY_SEED), // "tick_array"
-		whirlpoolPubkey.Bytes(), // whirlpool 地址 (32 bytes)
-		startTickIndexBytes,     // start_tick_index 字符串字节
+		whirlpoolPubkey.Bytes(), // whirlpool address (32 bytes)
+		startTickIndexBytes,     // start_tick_index string bytes
 	}
 
-	// 推导 PDA
+	// Derive PDA
 	pda, _, err := solana.FindProgramAddress(seeds, ORCA_WHIRLPOOL_PROGRAM_ID)
 	if err != nil {
 		return solana.PublicKey{}, fmt.Errorf("failed to find program address for tick array: %w", err)
@@ -284,26 +284,26 @@ func DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey solana.PublicKey, startTickInde
 	return pda, nil
 }
 
-// DeriveMultipleWhirlpoolTickArrayPDAs 推导多个 tick array PDA 地址
-// 用于交换指令中需要的 tick_array0, tick_array1, tick_array2
-// 根据 Whirlpool 源码实现正确的 tick array 序列计算
+// DeriveMultipleWhirlpoolTickArrayPDAs derives multiple tick array PDA addresses
+// Used for tick_array0, tick_array1, tick_array2 needed in swap instructions
+// Implements correct tick array sequence calculation based on Whirlpool source code
 func DeriveMultipleWhirlpoolTickArrayPDAs(whirlpoolPubkey solana.PublicKey, currentTick int64, tickSpacing int64, aToB bool) (tickArray0, tickArray1, tickArray2 solana.PublicKey, err error) {
-	// 1. 基于 Whirlpool 源码的 get_start_tick_indexes 函数实现
+	// 1. Based on Whirlpool source code get_start_tick_indexes function implementation
 	tickCurrentIndex := int32(currentTick)
 	tickSpacingI32 := int32(tickSpacing)
 	ticksInArray := TICK_ARRAY_SIZE * tickSpacingI32 // TICK_ARRAY_SIZE = 88
 
-	// 2. 计算 start_tick_index_base（向下整除）
+	// 2. Calculate start_tick_index_base (floor division)
 	startTickIndexBase := floorDivision(tickCurrentIndex, ticksInArray) * ticksInArray
 
-	// 3. 根据交换方向计算偏移量
+	// 3. Calculate offset based on swap direction
 	var offsets []int32
 	if aToB {
-		// A -> B: 价格下降，需要当前及之前的 tick arrays
+		// A -> B: price decreases, need current and previous tick arrays
 		offsets = []int32{0, -1, -2}
 	} else {
-		// B -> A: 价格上升，需要当前及之后的 tick arrays
-		// 检查是否已跨越到下一个 tick array
+		// B -> A: price increases, need current and subsequent tick arrays
+		// Check if already crossed to next tick array
 		shifted := tickCurrentIndex+tickSpacingI32 >= startTickIndexBase+ticksInArray
 		if shifted {
 			offsets = []int32{1, 2, 3}
@@ -312,7 +312,7 @@ func DeriveMultipleWhirlpoolTickArrayPDAs(whirlpoolPubkey solana.PublicKey, curr
 		}
 	}
 
-	// 4. 推导三个 tick array PDA
+	// 4. Derive three tick array PDAs
 	startIndex0 := startTickIndexBase + offsets[0]*ticksInArray
 	tickArray0, err = DeriveWhirlpoolTickArrayPDA(whirlpoolPubkey, int64(startIndex0))
 	if err != nil {
@@ -334,7 +334,7 @@ func DeriveMultipleWhirlpoolTickArrayPDAs(whirlpoolPubkey solana.PublicKey, curr
 	return tickArray0, tickArray1, tickArray2, nil
 }
 
-// floorDivision 实现整数除法（向下取整），与 Whirlpool 源码中的 floor_division 一致
+// floorDivision implements integer division (floor), consistent with floor_division in Whirlpool source code
 func floorDivision(dividend, divisor int32) int32 {
 	if (dividend < 0) != (divisor < 0) && dividend%divisor != 0 {
 		return dividend/divisor - 1
@@ -342,16 +342,16 @@ func floorDivision(dividend, divisor int32) int32 {
 	return dividend / divisor
 }
 
-// DeriveWhirlpoolOraclePDA 推导 Whirlpool Oracle 的 PDA 地址
-// 基于 Solana PDA 推导规则：种子 = ["oracle", whirlpool_pubkey]
+// DeriveWhirlpoolOraclePDA derives PDA address for Whirlpool Oracle
+// Based on Solana PDA derivation rules: seeds = ["oracle", whirlpool_pubkey]
 func DeriveWhirlpoolOraclePDA(whirlpoolPubkey solana.PublicKey) (solana.PublicKey, error) {
-	// 构建种子
+	// Build seeds
 	seeds := [][]byte{
 		[]byte("oracle"),        // "oracle"
-		whirlpoolPubkey.Bytes(), // whirlpool 地址 (32 bytes)
+		whirlpoolPubkey.Bytes(), // whirlpool address (32 bytes)
 	}
 
-	// 推导 PDA
+	// Derive PDA
 	pda, _, err := solana.FindProgramAddress(seeds, ORCA_WHIRLPOOL_PROGRAM_ID)
 	if err != nil {
 		return solana.PublicKey{}, fmt.Errorf("failed to find program address for oracle: %w", err)
