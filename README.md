@@ -10,6 +10,7 @@ SolRoute is a Go SDK that serves as the fundamental infrastructure for building 
   - Raydium CLMM (`CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK`)
   - PumpSwap AMM (`pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`)
   - Meteora DLMM (`LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo`)
+  - Orca Whirlpool (`whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc`)
 
 - **Core Functionality**
   - Pool discovery and management
@@ -18,6 +19,7 @@ SolRoute is a Go SDK that serves as the fundamental infrastructure for building 
   - Transaction instruction building
 
 ## Quick Start
+You run test in /tests to quickly understand the key feature of this project.
 
 note: before swapping, you must ensure that you have create the relavent SPL token account. I have provided some necessary func like: CoverWsol, CloseWsol and SelectOrCreateSPLTokenAccount.
 Youd'd better learn that knowledge from: https://solana.com/zh/developers/cookbook/tokens/get-token-account
@@ -59,6 +61,7 @@ solroute/
 │   ├── protocol/    # DEX implementations
 │   ├── router/      # Routing engine
 │   └── sol/         # Solana client
+├── tests/           # Contains integration and unit tests to ensure the reliability of swapping and routing logic.
 ```
 
 ## Contribution
