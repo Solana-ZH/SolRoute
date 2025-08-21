@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Solana-ZH/solroute/pkg"
+	"github.com/Solana-ZH/solroute/pkg/pool/raydium"
+	"github.com/Solana-ZH/solroute/pkg/sol"
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
-	"github.com/yimingWOW/solroute/pkg"
-	"github.com/yimingWOW/solroute/pkg/pool/raydium"
-	"github.com/yimingWOW/solroute/pkg/sol"
 )
 
 type RaydiumClmmProtocol struct {
@@ -60,6 +60,12 @@ func (p *RaydiumClmmProtocol) FetchPoolsByPair(ctx context.Context, baseMint str
 		}
 		layout.ExBitmapAddress = exBitmapAddress
 
+		// Check if pool has Swap functionality enabled, only add to results if enabled
+		if !layout.IsSwapEnabled() {
+			continue
+		}
+
+		// We don't set user accounts here, leave it to BuildSwapInstructions to handle
 		res = append(res, layout)
 	}
 	return res, nil
@@ -117,6 +123,13 @@ func (r *RaydiumClmmProtocol) FetchPoolByID(ctx context.Context, poolId string) 
 	if err := layout.Decode(data); err != nil {
 		return nil, fmt.Errorf("failed to decode pool data for %s: %w", poolId, err)
 	}
+	layout.PoolId = poolIdKey
+
+	// Check if pool has Swap functionality enabled
+	if !layout.IsSwapEnabled() {
+		return nil, fmt.Errorf("pool %s has swap functionality disabled", poolId)
+	}
+
 	return layout, nil
 }
 

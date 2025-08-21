@@ -12,10 +12,10 @@ import (
 	"strconv"
 
 	cosmath "cosmossdk.io/math"
+	"github.com/Solana-ZH/solroute/pkg"
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
-	"github.com/yimingWOW/solroute/pkg"
 	"lukechampine.com/uint128"
 )
 
@@ -284,13 +284,21 @@ func (l *CLMMPool) Offset(field string) uint64 {
 }
 
 func (l *CLMMPool) CurrentPrice() float64 {
-	// 转换为 float64
+	// Convert to float64
 	sqrtPrice, _ := l.SqrtPriceX64.Big().Float64()
-	// Q64.64 格式转换
+	// Q64.64 format conversion
 	sqrtPrice = sqrtPrice / math.Pow(2, 64)
-	// 计算实际价格
+	// Calculate actual price
 	price := sqrtPrice * sqrtPrice
 	return price
+}
+
+// IsSwapEnabled checks if swap functionality is enabled for this pool
+func (l *CLMMPool) IsSwapEnabled() bool {
+	// Bit 4 corresponds to Swap functionality
+	// If bit is 0, swap is enabled; if bit is 1, swap is disabled
+	swapBit := (l.Status >> 4) & 1
+	return swapBit == 0
 }
 
 func (p *CLMMPool) BuildSwapInstructions(
@@ -302,8 +310,59 @@ func (p *CLMMPool) BuildSwapInstructions(
 	minOutAmountWithDecimals cosmath.Int,
 ) ([]solana.Instruction, error) {
 
-	// 初始化指令数组和签名者
+	// Initialize instruction array and signers
 	instrs := []solana.Instruction{}
+
+	// Set user token accounts
+	var err error
+	userInputMintKey, err := solana.PublicKeyFromBase58(inputMint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid input mint: %w", err)
+	}
+
+	var outputMint solana.PublicKey
+	if inputMint == p.TokenMint0.String() {
+		outputMint = p.TokenMint1
+		// Find user's ATA account
+		p.UserBaseAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, userInputMintKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user input token account: %w", err)
+		}
+		p.UserQuoteAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, outputMint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user output token account: %w", err)
+		}
+	} else {
+		outputMint = p.TokenMint0
+		// Find user's ATA account
+		p.UserQuoteAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, userInputMintKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user input token account: %w", err)
+		}
+		p.UserBaseAccount, _, err = solana.FindAssociatedTokenAddress(userAddr, outputMint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find user output token account: %w", err)
+		}
+	}
+
+	// Check and create output ATA account (if not exists)
+	var outputATAAccount solana.PublicKey
+	if inputMint == p.TokenMint0.String() {
+		outputATAAccount = p.UserQuoteAccount
+	} else {
+		outputATAAccount = p.UserBaseAccount
+	}
+
+	outputATAInfo, err := solClient.GetAccountInfo(ctx, outputATAAccount)
+	if err != nil || outputATAInfo.Value == nil || outputATAInfo.Value.Owner.IsZero() {
+		// ATA doesn't exist, need to create it
+		// Temporarily skip creating ATA instruction, let user create manually
+		// Or can use solana CLI: solana spl-token create-account <mint>
+		log.Printf("Warning: Output ATA account %s does not exist, please create it manually", outputATAAccount.String())
+	}
+
+	// Remove Approve instruction, CLMM may use different authorization mechanism
+	// Or may not need pre-authorization at all
 
 	var inputValueMint solana.PublicKey
 	var outputValueMint solana.PublicKey
