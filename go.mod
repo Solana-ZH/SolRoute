@@ -1,4 +1,4 @@
-module github.com/yimingWOW/solroute
+module github.com/Solana-ZH/solroute
 
 go 1.24.0
 

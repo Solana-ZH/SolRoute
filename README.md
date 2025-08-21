@@ -48,7 +48,7 @@ instructions, err := bestPool.BuildSwapInstructions(ctx, solClient.RpcClient,
 ## Installation
 
 ```bash
-go get github.com/yimingWOW/solroute
+go get github.com/Solana-ZH/solroute
 ```
 
 ## Project Structure
@@ -66,7 +66,7 @@ solroute/
 
 ## Contribution
 
-Contributed by [yimingWOW](https://github.com/yimingWOW) from [Solar](https://www.solar.team/).
+Contributed by [yimingWOW](https://github.com/Solana-ZH) from [Solar](https://www.solar.team/).
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
